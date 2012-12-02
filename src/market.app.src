@@ -9,7 +9,7 @@
                   sasl,
                   crypto,
                   appmon,
-                  eredis_pool,
+                  eredis,
                   lager
                  ]},
   {mod, { market_app, []}},

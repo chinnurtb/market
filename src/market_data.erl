@@ -1,6 +1,6 @@
 -module(market_data).
 -behaviour(gen_server).
--record(state, { procs, hashes }).
+-record(state, { procs, hashes, redis }).
 
 -export([start_link/0, init/1]).
 -export([handle_event/2, handle_info/2, handle_call/2, handle_call/3, handle_cast/2,
@@ -16,8 +16,9 @@ start_link() ->
 init([]) ->
   process_flag(trap_exit, true),
   {ok, Procs} = file:consult("redis.lua.erl"),
-  Hashes = load_scripts(Procs),
-  {ok, #state{procs=Procs, hashes=Hashes}}.
+  {ok, Redis} = eredis:start_link(),
+  Hashes = load_scripts(Procs, Redis),
+  {ok, #state{procs=Procs, hashes=Hashes, redis=Redis}}.
 
 handle_event(_Event, S) -> {ok, S}.
 
@@ -57,12 +58,12 @@ timestamp() ->
   {Mega, Secs, _} = now(),
   Mega*1000000+Secs.
 
-load_scripts(Procs) ->
+load_scripts(Procs, Redis) ->
   Keys = proplists:get_keys(Procs),
   lists:foldl(fun(ScriptName, Acc) ->
     ScriptFile = proplists:get_value(ScriptName, Procs),
     Script = load_script_file("lua/lib.lua") ++ load_script_file(ScriptFile),
-    Reply = load_script(Script),
+    Reply = load_script(Script, Redis),
     Acc ++ [{ScriptName, Reply}]
   end, [], Keys).
 
@@ -78,13 +79,13 @@ get_all_lines(Device) ->
     Line -> Line ++ get_all_lines(Device)
   end.
 
-load_script(Script) ->
-  {ok, Reply} = eredis_pool:q({global, redis}, ["SCRIPT", "LOAD", Script]),
+load_script(Script, Redis) ->
+  {ok, Reply} = eredis:q(Redis, ["SCRIPT", "LOAD", Script]),
   Reply.
 
-do_script(ScriptName, Keys, Args, #state{hashes=Procs}) ->
+do_script(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
   Script = proplists:get_value(ScriptName, Procs),
-  case eredis:q({global, redis}, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
+  case eredis:q(Redis, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
     {ok, Reply} ->
       lager:info("SCRIPT REPLY: ~p", [Reply]),
       script_reply(Reply);

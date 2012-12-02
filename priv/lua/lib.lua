@@ -1,6 +1,20 @@
 local log = function(msg)
   redis.log(redis.LOG_DEBUG, msg)
 end
+local get_quote = function(symbol)
+  return tonumber(redis.call('HGET', symbol, 'tick')) or 1
+end
+local get_book = function(side, type, symbol)
+  local market = redis.call('SORT',
+    'book:'..side..':market:'..type..symbol, 'BY', 'NOSORT',
+    'GET', '*->id', 'GET', '*->limit', 'GET', '*->quantity',
+    'GET', '*->quantity_constraint','GET', '*->tif',
+    'GET', '*->ts', 'GET', '*->user', 'ASC')
+  local ret = {}
+  for i,order in ipairs(market) do
+    table.insert(ret, make_record
+
+
 local get_order = function(id)
   local o = redis.call('HMGET','order:'..id,
     'limit', 'quantity', 'quantity_constraint',
@@ -16,6 +30,13 @@ local get_order = function(id)
     symbol=o[7],
     type=o[8]
   }
+end
+local delete_order = function(order)
+  if order.id then
+    redis.call('DEL', 'order:'..order.id)
+    redis.call('SREM', 'user:'..order.user..':orders', order.id)
+    redis.call('ZREM', 'book:'..order.type..':market:'..order.symbol, order.id)
+  end
 end
 local get_order_id = function(order)
   local id = redis.call("INCR", "order:ids")
@@ -33,13 +54,6 @@ local make_order = function(user, symbol, type, limit, quantity, tif, qconst, ts
     symbol=symbol
   }
 end
-local orders_to_response = function(orders)
-  ret = {}
-  for k,v in ipairs(orders) do
-    table.insert(ret, order_to_response(v))
-  end
-  return ret
-end
 local order_to_response = function(order)
   return {
     {'type', order.type},
@@ -52,6 +66,13 @@ local order_to_response = function(order)
     {'symbol', order.symbol},
     {'id', order.id}
   }
+end
+local orders_to_response = function(orders)
+  local ret = {}
+  for k,v in ipairs(orders) do
+    table.insert(ret, order_to_response(v))
+  end
+  return ret
 end
 local get_user = function(id)
   local u = redis.call('HMGET', 'user:'..id,
@@ -150,4 +171,60 @@ local add_market_order = function(order)
   redis.call('ZADD', 'book:'..order.type..':market:'..order.symbol, order.quantity, order.id)
   local ot = order_to_response(order)
   return {"accepted", ot}
+end
+local attempt_to_fill = function(buy, sell, ts)
+  log("buy order user is "..buy.user)
+  log("sell order user is "..sell.user)
+  local buy_u = get_user(buy.user)
+  local sell_u = get_user(sell.user)
+
+  local unit_price = tonumber(sell.limit) or tonumber(buy.limit) or 0
+  if unit_price == 0 then
+    --pull quote
+    unit_price = get_quote(buy.symbol)
+  end
+  local quantity = 0
+  if buy.quantity < sell.quantity then
+    quantity = tonumber(buy.quantity)
+  else
+    quantity = tonumber(sell.quantity)
+  end
+  local tx_cost = quantity * unit_price
+  local cash = tonumber(buy_u.cash) or 0
+  local on_hand = tonumber(sell_u[sell.symbol]) or 0
+  log(buy_u.id.." buying "..quantity.." of "..buy.symbol.." for "..unit_price.." per total "..tx_cost.." from "..sell_u.id)
+  log("seller has "..(sell_u[sell.symbol] or 'none'))
+  log("buyer has "..(buy_u.cash or 'none'))
+  if cash > tx_cost then
+    if on_hand > quantity then
+      log("doing tx")
+      local tx_id = redis.call('INCR', 'tx:ids')
+      redis.call('HINCRBY', 'user:'..buy_u.id, buy.symbol, quantity)
+      redis.call('HINCRBY', 'user:'..buy_u.id, 'cash', tx_cost * (-1))
+      redis.call('HINCRBY', 'user:'..sell_u.id, buy.symbol, quantity*(-1))
+      redis.call('HINCRBY', 'user:'..sell_u.id, 'cash', tx_cost)
+      redis.call('HMSET', 'tx:'..tx_id, 'buyer', buy_u.id, 'seller', sell_u.id,
+                'quantity', quantity, 'price', unit_price, 'total', tx_cost,
+                'symbol', buy.symbol, 'ts', ts)
+      redis.call('SADD', 'user:'..buy_u.id..':transactions', tx_id)
+      redis.call('SADD', 'user:'..sell_u.id..':transactions', tx_id)
+      redis.call('LPUSH', buy.symbol..':transactions', tx_id)
+      redis.call('LTRIM', buy.symbol..':transactions', 0, 1000)
+      redis.call('ZADD', buy.symbol..':ticks', unit_price, tx_id)
+      redis.call('HSET', buy.symbol, 'tick', unit_price)
+      log("transaction "..tx_id.." complete")
+
+      delete_order(sell)
+      delete_order(buy)
+      return tx_id
+    else
+      log("seller unable to fill order "..(buy.id or 0).." : "..(sell.id or 0))
+      delete_order(sell)
+      return -2
+    end
+  else
+    log("buyer unable to fill order "..(buy.id or 0).." : "..(sell.id or 0))
+    delete_order(buy)
+    return -1
+  end
 end

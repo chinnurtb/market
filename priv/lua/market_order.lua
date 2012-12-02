@@ -30,12 +30,36 @@ for k,v in ipairs(limit) do
 end
 
 if table.getn(matches) == 0 then
-  --day or until canceled?
   if order.tif == 'day' or order.tif == 'canceled' then
     return add_market_order(order)
   else
     return {"canceled", {{"reason", order.tif}}}
   end
 else
-    return {"test", {{"matched", orders_to_response(matches)}}}
+  --TRY TO FILL ORDER
+  for idx, counter in ipairs(matches) do
+    log("trying match "..counter.id)
+    local txn = 0
+    if order.type == 'buy' then
+      txn = attempt_to_fill(order, counter, order.ts)
+    else
+      txn = attempt_to_fill(counter, order, order.ts)
+    end
+    if txn > 0 then
+      return {"filled", {{"transaction", txn}}}
+    else
+      if (txn == -1 and counter_type == 'sell') or
+        (txn == -2 and counter_type == 'buy') then
+        return {"canceled", {{"reason", "you are unable to fill"}}}
+      end
+    end
+  end
+  --FOR SOME REASON NO MATCHES 
+  --WOULD FILL THIS ORDER SO BOOK IT!
+  if order.tif == 'day' or order.tif == 'canceled' then
+    log("adding after failed transactions!")
+    return add_market_order(order)
+  else
+    return {"canceled", {{"reason", order.tif}}}
+  end
 end
