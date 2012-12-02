@@ -1,0 +1,8 @@
+cocaine:book:ask
+  timestamp-id, price
+  
+ask:timestamp-id
+  limit - optional?
+  quantity
+  quantity-contraint [ aon, none ]
+  tif [ gfd, gtc, ioc, fok ]

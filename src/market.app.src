@@ -1,0 +1,27 @@
+{application, market,
+ [
+  {description, "MarketMadness"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  sasl,
+                  crypto,
+                  appmon,
+                  eredis_pool,
+                  lager
+                 ]},
+  {mod, { market_app, []}},
+  {env, [
+  ]},
+  {modules, [
+    market_app,
+    market_sup,
+    market_event,
+    market_events,
+    market_data,
+    market_broker,
+    market_tests
+  ]}
+ ]}.
