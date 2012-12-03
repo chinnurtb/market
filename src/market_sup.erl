@@ -7,7 +7,6 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    Market = {market_events, {market_events, start_link, []}, permanent, 5000, worker, [market_events]},
-    Data = {market_data, {market_data, start_link, []}, permanent, 5000, worker, [market_data]},
+    Data = {market_data_sup, {market_data_sup, start_link, []}, transient, infinity, supervisor, [market_data_sup]},
     Broker = {market_broker, {market_broker, start_link, []}, permanent, 5000, worker, [market_broker]},
-    {ok, { {rest_for_one, 5, 10}, [Data, Market, Broker]} }.
+    {ok, { {one_for_one, 5, 10}, [Data, Broker]} }.

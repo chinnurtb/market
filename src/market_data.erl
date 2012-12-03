@@ -8,6 +8,15 @@
 
 -include("market_data.hrl").
 
+%% PUBLIC API
+-export([get_bids/2, get_asks/2]).
+
+get_bids(Book, Symbol) ->
+  gen_server:call(?MODULE, {bids, Book, Symbol}).
+
+get_asks(Book, Symbol) ->
+  gen_server:call(?MODULE, {asks, Book, Symbol}).
+
 %% GEN_SERVER CALLBACKS
 
 start_link() ->
@@ -26,21 +35,9 @@ handle_info(_Msg, S) -> {noreply, S}.
 
 handle_call(_Msg, S) -> {reply, ok, S}.
 
-handle_call({User, #marketOrder{
-      type=buy, limit=none, symbol=Symbol,
-      quantity=Quantity, time_in_force=Tif,
-      quantity_constraint=QConst}}, _, S) ->
-  Reply = do_script(market_order, [User, Symbol, buy], [Quantity, Tif, QConst, timestamp()], S),
-  lager:info("reply: ~p", [Reply]),
-  {reply, Reply, S};
-
-handle_call({User, #marketOrder{
-      type=sell, limit=none, symbol=Symbol,
-      quantity=Quantity, time_in_force=Tif,
-      quantity_constraint=QConst}}, _, S) ->
-  Reply = do_script(market_order, [User, Symbol, sell], [Quantity, Tif, QConst, timestamp()], S),
-  lager:info("reply: ~p", [Reply]),
-  {reply, Reply, S};
+handle_call({Side, Book, Symbol}, _, S) ->
+  Orders = do_script_raw(orders, [Side, Book, Symbol], [], S),
+  {reply, Orders, S};
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
@@ -53,10 +50,6 @@ terminate(Reason, _) ->
   ok.
 
 code_change(_, _, S) -> {ok, S}.
-
-timestamp() ->
-  {Mega, Secs, _} = now(),
-  Mega*1000000+Secs.
 
 load_scripts(Procs, Redis) ->
   Keys = proplists:get_keys(Procs),
@@ -83,12 +76,18 @@ load_script(Script, Redis) ->
   {ok, Reply} = eredis:q(Redis, ["SCRIPT", "LOAD", Script]),
   Reply.
 
-do_script(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
+do_script(ScriptName, Keys, Args, S) ->
+  case do_script_raw(ScriptName, Keys, Args, S) of
+    {error, Reason} -> {error, Reason};
+    Reply -> script_reply(Reply)
+  end.
+
+do_script_raw(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
   Script = proplists:get_value(ScriptName, Procs),
   case eredis:q(Redis, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
     {ok, Reply} ->
       lager:info("SCRIPT REPLY: ~p", [Reply]),
-      script_reply(Reply);
+      Reply;
     {error, Reason} ->
       lager:error(Reason),
       {error, Reason}

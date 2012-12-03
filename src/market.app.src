@@ -18,9 +18,11 @@
   {modules, [
     market_app,
     market_sup,
+    market_data_sup,
     market_event,
     market_events,
     market_data,
+    market_orders,
     market_broker,
     market_tests
   ]}

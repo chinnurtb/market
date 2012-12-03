@@ -11,25 +11,31 @@
 
 buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
   Order = #marketOrder {
+    id=uuid:to_string(uuid:uuid4()),
+    user=User,
     symbol=Symbol,
-    type=buy,
+    type=bid,
     limit=Limit,
     quantity=Quantity,
     quantity_constraint=QConst,
-    time_in_force=Tif
+    time_in_force=Tif,
+    timestamp=market_utils:timestamp()
   },
   gen_server:call(market_data, {User, Order}).
 
 sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
   Order = #marketOrder {
+    id=uuid:to_string(uuid:uuid4()),
+    user=User,
     symbol=Symbol,
-    type=sell,
+    type=ask,
     limit=Limit,
     quantity=Quantity,
     quantity_constraint=QConst,
-    time_in_force=Tif
+    time_in_force=Tif,
+    timestamp=market_utils:timestamp()
   },
-  gen_server:call(market_data,{User, Order}).
+  gen_server:call(market_data,{order, Order}).
 
 %% GEN_SERVER CALLBACKS
 
