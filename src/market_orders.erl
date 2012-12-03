@@ -95,6 +95,8 @@ save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   SymbolOrders2 = SymbolOrders ++ [Order],
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
+  market_data:write_order(Order),
+  market_events:order_placed(Order),
   {saved, Book2}.
 
 

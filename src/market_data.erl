@@ -9,13 +9,16 @@
 -include("market_data.hrl").
 
 %% PUBLIC API
--export([get_bids/2, get_asks/2]).
+-export([get_bids/2, get_asks/2, write_order/1]).
 
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
 
 get_asks(Book, Symbol) ->
   gen_server:call(?MODULE, {ask, Book, Symbol}).
+
+write_order(Order) ->
+  gen_server:cast(?MODULE, {write, Order}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -37,12 +40,33 @@ handle_call(_Msg, S) -> {reply, ok, S}.
 
 %% GET BOOKS
 handle_call({Side, Book, Symbol}, _, S) ->
-  Orders = do_script_raw(orders, [Side, Book, Symbol], [], S),
-  {reply, sort_reply(Orders), S};
+  Orders = do_script(orders, [Side, Book, Symbol], [], S),
+  {reply, orders_reply(Orders), S};
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
   {reply, ok, S}.
+
+handle_cast({write, Order}, S) ->
+  #marketOrder {
+    id=Id,
+    user=User,
+    symbol=Symbol,
+    type=Type,
+    limit=Limit,
+    quantity=Quantity,
+    quantity_constraint=QConst,
+    time_in_force=Tif,
+    timestamp=Ts
+  } = Order,
+  Market = case Limit of
+    none -> market;
+    _ -> limit
+  end,
+  Reply = do_script(write_order, [Id, User, Symbol],
+    [Type, Limit, Quantity, QConst, Tif, Ts, Market], S),
+  lager:info("~p", [Reply]),
+  {noreply, S};
 
 handle_cast(_Msg, S) -> {noreply, S}.
 
@@ -77,13 +101,7 @@ load_script(Script, Redis) ->
   {ok, Reply} = eredis:q(Redis, ["SCRIPT", "LOAD", Script]),
   Reply.
 
-do_script(ScriptName, Keys, Args, S) ->
-  case do_script_raw(ScriptName, Keys, Args, S) of
-    {error, Reason} -> {error, Reason};
-    Reply -> script_reply(Reply)
-  end.
-
-do_script_raw(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
+do_script(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
   Script = proplists:get_value(ScriptName, Procs),
   case eredis:q(Redis, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
     {ok, Reply} -> Reply;
@@ -95,9 +113,9 @@ do_script_raw(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
 script_reply( [ Atom, Data ] ) -> 
   {list_to_atom(btl(Atom)), tuple_list(Data)}.
 
-sort_reply(L) -> sort_reply(L, []).
-sort_reply([], R) -> R;
-sort_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R) ->
+orders_reply(L) -> orders_reply(L, []).
+orders_reply([], R) -> R;
+orders_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R) ->
   Order = #marketOrder {
     id=Id,
     user=val(User),
@@ -109,7 +127,7 @@ sort_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R) 
     time_in_force=val(Tif),
     timestamp=val(Ts)
   },
-  sort_reply(T, R ++ [Order]).
+  orders_reply(T, R ++ [Order]).
     
 
 tuple_list(L) -> tuple_list(L, []).
