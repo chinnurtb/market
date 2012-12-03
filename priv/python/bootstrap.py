@@ -1,8 +1,18 @@
 import redis
 r = redis.StrictRedis()
 r.flushdb()
-for i in range(1, 100000):
-  for x in ['cocaine', 'pot', 'speed']:
-    r.hset('user:%d' % i, x, 1000)
-  r.hset('user:%d' % i, 'cash', 10000)
-  r.sadd('users', i)
+
+for i in range(1, 100):
+  ask = {
+      'id':i,
+      'user':0,
+      'symbol':'cocaine',
+      'type':'ask',
+      'limit':'none',
+      'quantity':100,
+      'quantity_constraint':'none',
+      'time_in_force':'cancelled',
+      'timestamp':'123423432%d' % i
+  }
+  r.hmset('order:%d' % i, ask)
+  r.sadd('book:ask:market:cocaine', i)

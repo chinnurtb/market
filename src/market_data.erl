@@ -12,10 +12,10 @@
 -export([get_bids/2, get_asks/2]).
 
 get_bids(Book, Symbol) ->
-  gen_server:call(?MODULE, {bids, Book, Symbol}).
+  gen_server:call(?MODULE, {bid, Book, Symbol}).
 
 get_asks(Book, Symbol) ->
-  gen_server:call(?MODULE, {asks, Book, Symbol}).
+  gen_server:call(?MODULE, {ask, Book, Symbol}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -35,9 +35,10 @@ handle_info(_Msg, S) -> {noreply, S}.
 
 handle_call(_Msg, S) -> {reply, ok, S}.
 
+%% GET BOOKS
 handle_call({Side, Book, Symbol}, _, S) ->
   Orders = do_script_raw(orders, [Side, Book, Symbol], [], S),
-  {reply, Orders, S};
+  {reply, sort_reply(Orders), S};
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
@@ -85,9 +86,7 @@ do_script(ScriptName, Keys, Args, S) ->
 do_script_raw(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
   Script = proplists:get_value(ScriptName, Procs),
   case eredis:q(Redis, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
-    {ok, Reply} ->
-      lager:info("SCRIPT REPLY: ~p", [Reply]),
-      Reply;
+    {ok, Reply} -> Reply;
     {error, Reason} ->
       lager:error(Reason),
       {error, Reason}
@@ -96,17 +95,44 @@ do_script_raw(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
 script_reply( [ Atom, Data ] ) -> 
   {list_to_atom(btl(Atom)), tuple_list(Data)}.
 
+sort_reply(L) -> sort_reply(L, []).
+sort_reply([], R) -> R;
+sort_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R) ->
+  Order = #marketOrder {
+    id=Id,
+    user=val(User),
+    symbol=val(Symbol),
+    type=val(Type),
+    limit=val(Limit),
+    quantity=val(Quantity),
+    quantity_constraint=val(QConst),
+    time_in_force=val(Tif),
+    timestamp=val(Ts)
+  },
+  sort_reply(T, R ++ [Order]).
+    
+
 tuple_list(L) -> tuple_list(L, []).
 tuple_list([], R) -> R;
 tuple_list([ [Atom, Value] | T ], R) ->
-    R2 = R ++ [{list_to_atom(btl(Atom)), val(Value)}],
-    tuple_list(T, R2).
+  tuple_list(T, [ R | {list_to_atom(btl(Atom)), val(Value)}]).
 
 val(A) ->
   S = btl(A),
-  case string:to_integer(S) of
+  Ret = case string:to_integer(S) of
     {Int, []} -> Int;
     _ -> S
+  end,
+  case Ret of
+    "none" -> none;
+    "all" -> all;
+    "cancelled" -> cancelled;
+    "bid" -> bid;
+    "ask" -> ask;
+    "day" -> day;
+    "immediate" -> immediate;
+    "fill" -> fill;
+    _ -> Ret
   end.
 
 btl(B) when is_binary(B) -> binary_to_list(B);

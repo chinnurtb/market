@@ -1,9 +1,10 @@
 %% Handles bid, ask, close events on a market.
 -module(market_events).
--export([start_link/0, subscribe/1, unsubscribe/1, bid/4, ask/4, close/3,
-    cancel_bid/2, cancel_ask/2]).
+-export([start_link/0, subscribe/1, unsubscribe/1, order_placed/1,
+    order_filled/3, symbol_tick/3]).
 
 -define(SERVER, {local, ?MODULE}).
+-include("market_data.hrl").
 
 start_link() ->
   gen_event:start_link(?SERVER).
@@ -16,22 +17,11 @@ subscribe(Listener) ->
 unsubscribe(Listener) ->
   gen_event:delete_handler(?MODULE, Listener, []).
 
-bid(From, Symbol, Price, Quantity) ->
-  lager:info("~p bidding ~p for ~p", [From, Price, Symbol]),
-  gen_event:notify(?MODULE, {bid, {From, Symbol, Price, Quantity}}).
+order_placed(Order) ->
+  gen_event:notify(?MODULE, {order, Order}).
 
-ask(From, Symbol, Price, Quantity) ->
-  lager:info("~p asking ~p for ~p", [From, Price, Symbol]),
-  gen_event:notify(?MODULE, {ask, {From, Symbol, Price, Quantity }}).
+order_filled(Buy, Sell, Clear) ->
+  gen_event:notify(?MODULE, {closed, Buy, Sell, Clear}).
 
-close(Symbol, Price, Quantity) ->
-  lager:info("~p closed at ~p", [Symbol, Price]),
-  gen_event:notify(?MODULE, {close, {Symbol, Price, Quantity}}).
-
-cancel_bid(From, Symbol) ->
-  lager:info("~p canceled bid for ~p", [From, Symbol]),
-  gen_event:notify(?MODULE, {bid_cancel, {From, Symbol}}).
-
-cancel_ask(From, Symbol) ->
-  lager:info("~p canceled ask for ~p", [From, Symbol]),
-  gen_event:notify(?MODULE, {ask_cancel, {From, Symbol}}).
+symbol_tick(Symbol, New, Last) ->
+  gen_event:notify(?MODULE, {tick, Symbol, New, Last}).

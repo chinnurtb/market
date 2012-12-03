@@ -10,7 +10,7 @@
 -export([buy/6, sell/6]).
 
 buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
-  Order = #marketOrder {
+ place_order(#marketOrder {
     id=uuid:to_string(uuid:uuid4()),
     user=User,
     symbol=Symbol,
@@ -20,11 +20,10 @@ buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
     quantity_constraint=QConst,
     time_in_force=Tif,
     timestamp=market_utils:timestamp()
-  },
-  gen_server:call(market_data, {User, Order}).
+  }).
 
 sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
-  Order = #marketOrder {
+  place_order(#marketOrder {
     id=uuid:to_string(uuid:uuid4()),
     user=User,
     symbol=Symbol,
@@ -34,8 +33,7 @@ sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
     quantity_constraint=QConst,
     time_in_force=Tif,
     timestamp=market_utils:timestamp()
-  },
-  gen_server:call(market_data,{order, Order}).
+  }).
 
 %% GEN_SERVER CALLBACKS
 
@@ -61,3 +59,9 @@ terminate(Reason, _) ->
   ok.
 
 code_change(_, _, S) -> {ok, S}.
+
+place_order(#marketOrder{limit=Limit} = Order) ->
+  case Limit of
+    none -> market_orders:book_order(Order);
+    _ -> limit_orders:book_order(Order)
+  end.
