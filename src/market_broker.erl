@@ -7,7 +7,7 @@
     terminate/2, code_change/3]).
 
 %% PUBLIC API
--export([buy/6, sell/6]).
+-export([buy/6, sell/6, cancel/1]).
 
 buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
  place_order(#marketOrder {
@@ -35,6 +35,8 @@ sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
     timestamp=market_utils:timestamp()
   }).
 
+cancel(OrderId) -> cancel_order(OrderId).
+
 %% GEN_SERVER CALLBACKS
 
 start_link() ->
@@ -60,8 +62,19 @@ terminate(Reason, _) ->
 
 code_change(_, _, S) -> {ok, S}.
 
-place_order(#marketOrder{limit=Limit} = Order) ->
-  case Limit of
-    none -> market_orders:book_order(Order);
-    _ -> limit_orders:book_order(Order)
+place_order(#marketOrder{limit=none} = Order) ->
+  market_orders:book_order(Order);
+place_order(#marketOrder{} = Order) ->
+  limit_orders:book_order(Order).
+
+cancel_order(OrderId) ->
+  case market_data:get_order(OrderId) of
+    none -> {error, not_found};
+    Order ->
+      case Order#marketOrder.limit of
+        none ->
+          market_orders:cancel_order(Order);
+        _ ->
+          limit_orders:cancel_order(Order)
+      end
   end.

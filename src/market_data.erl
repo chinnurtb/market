@@ -9,7 +9,8 @@
 -include("market_data.hrl").
 
 %% PUBLIC API
--export([get_bids/2, get_asks/2, write_order/1]).
+-export([get_bids/2, get_asks/2,
+    get_order/1, write_order/1, delete_order/1]).
 
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
@@ -17,8 +18,14 @@ get_bids(Book, Symbol) ->
 get_asks(Book, Symbol) ->
   gen_server:call(?MODULE, {ask, Book, Symbol}).
 
+get_order(OrderId) ->
+  gen_server:call(?MODULE, {order, OrderId}).
+
 write_order(Order) ->
   gen_server:cast(?MODULE, {write, Order}).
+
+delete_order(OrderId) ->
+  gen_server:cast(?MODULE, {delete, OrderId}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -43,6 +50,10 @@ handle_call({Side, Book, Symbol}, _, S) ->
   Orders = do_script(orders, [Side, Book, Symbol], [], S),
   {reply, orders_reply(Orders), S};
 
+handle_call({order, Id}, _, S) ->
+  Order = do_script(order, [Id], [], S),
+  {reply, order_reply(Order), S};
+
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
   {reply, ok, S}.
@@ -63,9 +74,12 @@ handle_cast({write, Order}, S) ->
     none -> market;
     _ -> limit
   end,
-  Reply = do_script(write_order, [Id, User, Symbol],
+  do_script(write_order, [Id, User, Symbol],
     [Type, Limit, Quantity, QConst, Tif, Ts, Market], S),
-  lager:info("~p", [Reply]),
+  {noreply, S};
+
+handle_cast({delete, #marketOrder{id=OrderId}}, S) ->
+  do_script(delete_order, [OrderId], [], S),
   {noreply, S};
 
 handle_cast(_Msg, S) -> {noreply, S}.
@@ -117,9 +131,9 @@ orders_reply(L) -> orders_reply(L, []).
 orders_reply([], R) -> R;
 orders_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R) ->
   Order = #marketOrder {
-    id=Id,
+    id=val(Id),
     user=val(User),
-    symbol=val(Symbol),
+    symbol=list_to_atom(val(Symbol)),
     type=val(Type),
     limit=val(Limit),
     quantity=val(Quantity),
@@ -128,7 +142,22 @@ orders_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts | T ], R
     timestamp=val(Ts)
   },
   orders_reply(T, R ++ [Order]).
-    
+
+order_reply([]) -> none;
+order_reply([undefined]) -> none;
+order_reply([undefined | _]) -> none;
+order_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts ]) ->
+  #marketOrder {
+    id=val(Id),
+    user=val(User),
+    symbol=list_to_atom(val(Symbol)),
+    type=val(Type),
+    limit=val(Limit),
+    quantity=val(Quantity),
+    quantity_constraint=val(QConst),
+    time_in_force=val(Tif),
+    timestamp=val(Ts)
+  }.
 
 tuple_list(L) -> tuple_list(L, []).
 tuple_list([], R) -> R;

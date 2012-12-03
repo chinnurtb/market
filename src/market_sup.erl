@@ -8,5 +8,7 @@ start_link() ->
 
 init([]) ->
     Data = {market_data_sup, {market_data_sup, start_link, []}, transient, infinity, supervisor, [market_data_sup]},
+    Events = {market_events, {market_events, start_link, []}, permanent, 5000, worker, [market_events]},
     Broker = {market_broker, {market_broker, start_link, []}, permanent, 5000, worker, [market_broker]},
-    {ok, { {one_for_one, 5, 10}, [Data, Broker]} }.
+    Maker = {market_maker, {market_maker, start_link, []}, permanent, 5000, worker, [market_maker]},
+    {ok, { {one_for_one, 5, 10}, [Data, Events, Broker, Maker]} }.

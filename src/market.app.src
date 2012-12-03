@@ -24,6 +24,7 @@
     market_data,
     market_orders,
     market_broker,
+    market_maker,
     market_tests
   ]}
  ]}.
