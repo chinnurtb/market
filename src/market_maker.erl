@@ -19,9 +19,16 @@ init([]) ->
 
 handle_event(_Event, S) -> {ok, S}.
 
-handle_info(_Msg, S) ->  lager:info("2"), {noreply, S}.
+handle_info({order, Order}) ->
+  match_order(Order),
+  {noreply, S};
 
-handle_call(_Msg, S) ->  {reply, ok, S}.
+handle_info({tick, Symbol, New, Last}) ->
+  rematch(Symbol, New, Last);
+
+handle_info(_Msg, S) -> {noreply, S}.
+
+handle_call(_Msg, S) -> {reply, ok, S}.
 
 handle_call(_Msg, _, S) -> {reply, ok, S}.
 
@@ -33,3 +40,32 @@ terminate(Reason, S) ->
   ok.
 
 code_change(_, _, S) -> {ok, S}.
+
+match_order(#marketOrder{symbol=Symbol, type=Type} = Order) ->
+  MarketContras = case Type of
+    bid ->
+      market_orders:get_asks(Symbol)
+      ++ limit_orders:get_asks(Symbol);
+    ask ->
+      market_orders:get_bids(Symbol)
+      ++ limit_orders:get_bids(Symbol)
+  end,
+  filter_contras(Order, MarketContras),
+  ok.
+
+filter_contras(Order, Contras) ->
+  NotMe = lists:filter(fun(C) ->
+    C#marketOrder.user /= Order#marketOrder.user
+  end, Contras),
+  filter_contras_quantity(Order, NotMe).
+
+filter_contras_quantity(Order, Contras) ->
+  C2 = lists:filter(fun(C) ->
+    
+  
+
+
+%% A SYMBOL TICKED
+%% SO CHECK OUR LIMIT ORDERS
+%% FOR FILLABLES!
+rematch(Symbol, New, Last) -> ok.
