@@ -54,8 +54,8 @@ handle_call({book, Order}, _, Book) ->
   end;
 
 handle_call({cancel, Order}, _, Book) ->
-  cancel_order(Order, Book),
-  {reply, ok, Book};
+  {cancelled, Book2} = cancel_order(Order, Book),
+  {reply, ok, Book2};
 
 handle_call({Symbol, Type}, _, Book) ->
   SymbolOrders = symbol_orders(Symbol, Type, Book),
@@ -92,8 +92,7 @@ validate_order(#marketOrder { user=User, symbol=Symbol,
 
 user_orders_by_symbol(User, Symbol, Type, Book) ->
   lists:filter(fun(X) ->
-    User =:= X#marketOrder.user,
-    lager:info("USER ALREADY HAS ~p", [X])
+    User == X#marketOrder.user
   end, symbol_orders(Symbol, Type, Book)).
 
 save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
@@ -113,12 +112,12 @@ cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   SymbolOrders = dict:fetch(Symbol, Orders),
   SymbolOrders2 = lists:filter(fun(X) ->
     lager:info("~p", [X]),
-    X#marketOrder.id =/= Order#marketOrder.id
+    X#marketOrder.id /= Order#marketOrder.id
   end, SymbolOrders),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
   market_data:delete_order(Order),
-  {saved, Book2}.
+  {cancelled, Book2}.
 
 %% TAKES TWO LISTS
 %% A LIST OF ORDER LISTS
