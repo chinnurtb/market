@@ -9,6 +9,8 @@
 %% PUBLIC API
 -export([get_bids/1, get_asks/1, book_order/1, cancel_order/1]).
 
+-export([order_exists/1]).
+
 get_bids(Symbol) ->
   gen_server:call(?MODULE, {Symbol, bids}).
 get_asks(Symbol) ->
@@ -19,6 +21,9 @@ book_order(Order) ->
 
 cancel_order(Order) ->
   gen_server:call(?MODULE, {cancel, Order}).
+
+order_exists(Id) ->
+  gen_server:call(?MODULE, {exists, Id}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -47,7 +52,6 @@ handle_call({book, Order}, _, Book) ->
   end,
   case Res of
     {saved, Book2} ->
-      market_events:order_placed(Order),
       {reply, {saved, Order}, Book2};
     _ ->
       {reply, Res, Book}
@@ -56,6 +60,11 @@ handle_call({book, Order}, _, Book) ->
 handle_call({cancel, Order}, _, Book) ->
   {cancelled, Book2} = cancel_order(Order, Book),
   {reply, ok, Book2};
+
+handle_call({exists, #marketOrder{type=Type, symbol=Symbol} = Order}, _, Book) ->
+  Orders = dict:fetch(plural(Type), Book),
+  SymbolOrders = dict:fetch(Symbol, Orders),
+  {reply, lists:member(Order, SymbolOrders), Book};
 
 handle_call({Symbol, Type}, _, Book) ->
   SymbolOrders = symbol_orders(Symbol, Type, Book),
@@ -99,7 +108,21 @@ save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   lager:info("Saving Order: ~p", [Order]),
   Orders = dict:fetch(plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
-  SymbolOrders2 = SymbolOrders ++ [Order],
+  SymbolOrders2 = lists:sort(fun(A, B) ->
+    case A#marketOrder.limit of
+      none ->
+        %% market orders, sort by time-pref
+        A#marketOrder.timestamp =< B#marketOrder.timestamp;
+      _ ->
+        %% limit orders, sort by price, then time-pref
+        case A#marketOrder.limit == B#marketOrder.limit of
+          true ->
+            A#marketOrder.timestamp =< B#marketOrder.timestamp;
+          false ->
+            A#marketOrder.limit =< B#marketOrder.limit
+        end
+    end
+  end, SymbolOrders ++ [Order]),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
   market_data:write_order(Order),

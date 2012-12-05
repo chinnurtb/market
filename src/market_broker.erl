@@ -9,31 +9,34 @@
 %% PUBLIC API
 -export([buy/6, sell/6, cancel/1]).
 
-buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
+buy(User, Symbol, none, Quantity, none, Tif) ->
  place_order(#marketOrder {
     id=uuid:to_string(uuid:uuid4()),
     user=User,
     symbol=Symbol,
     type=bid,
-    limit=Limit,
+    limit=none,
     quantity=Quantity,
-    quantity_constraint=QConst,
+    quantity_constraint=none,
     time_in_force=Tif,
     timestamp=market_utils:timestamp()
-  }).
+  });
+buy(_, _, _, _, _, _) -> not_implemented.
 
-sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
+sell(User, Symbol, none, Quantity, none, Tif) ->
   place_order(#marketOrder {
     id=uuid:to_string(uuid:uuid4()),
     user=User,
     symbol=Symbol,
     type=ask,
-    limit=Limit,
+    limit=none,
     quantity=Quantity,
-    quantity_constraint=QConst,
+    quantity_constraint=none,
     time_in_force=Tif,
     timestamp=market_utils:timestamp()
-  }).
+  });
+
+sell(_, _, _, _, _, _) -> not_implemented.
 
 cancel(OrderId) -> cancel_order(OrderId).
 
@@ -48,13 +51,13 @@ init([]) ->
 
 handle_event(_Event, S) -> {ok, S}.
 
-handle_info(_Msg, S) -> {noreply, S}.
-
 handle_call(_Msg, S) -> {reply, ok, S}.
 
 handle_call(_Msg, _, S) -> {reply, ok, S}.
 
 handle_cast(_Msg, S) -> {noreply, S}.
+
+handle_info(_Msg, S) -> {noreply, S}.
 
 terminate(Reason, _) ->
   lager:info("~p terminating due to ~p", [?MODULE, Reason]),

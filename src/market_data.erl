@@ -12,6 +12,8 @@
 -export([get_bids/2, get_asks/2,
     get_order/1, write_order/1, delete_order/1]).
 
+-export([quote/1, execute/4]).
+
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
 
@@ -26,6 +28,12 @@ write_order(Order) ->
 
 delete_order(OrderId) ->
   gen_server:cast(?MODULE, {delete, OrderId}).
+
+quote(Symbol) ->
+  gen_server:call(?MODULE, {quote, Symbol}).
+
+execute(OrderId, ContraId, Price, Quantity) ->
+  gen_server:call(?MODULE, {execute, OrderId, ContraId, Price, Quantity}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -53,6 +61,17 @@ handle_call({Side, Book, Symbol}, _, S) ->
 handle_call({order, Id}, _, S) ->
   Order = do_script(order, [Id], [], S),
   {reply, order_reply(Order), S};
+
+handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
+  Reply = case eredis:q(Redis, ["HGET", Symbol, "price"]) of
+    {ok, undefined} -> 1;
+    {ok, Price} -> val(Price)
+  end,
+  {reply, Reply, S};
+
+handle_call({execute, O, C, P, Q}, _, S) ->
+  Reply = do_script(execute, [O, C], [P, Q], S),
+  {reply, val(Reply), S};
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),

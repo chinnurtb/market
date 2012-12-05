@@ -2,3 +2,4 @@
 {orders, "lua/get_orders.lua"}.
 {write_order, "lua/write_order.lua"}.
 {delete_order, "lua/delete_order.lua"}.
+{execute, "lua/execute_order.lua"}.
