@@ -6,25 +6,6 @@
 -export([handle_event/2, handle_info/2, handle_call/2, handle_call/3, handle_cast/2,
     terminate/2, code_change/3]).
 
-%% PUBLIC API
--export([get_bids/1, get_asks/1, book_order/1, cancel_order/1]).
-
--export([order_exists/1]).
-
-get_bids(Symbol) ->
-  gen_server:call(?MODULE, {Symbol, bids}).
-get_asks(Symbol) ->
-  gen_server:call(?MODULE, {Symbol, asks}).
-
-book_order(Order) ->
-  gen_server:call(?MODULE, {book, Order}).
-
-cancel_order(Order) ->
-  gen_server:call(?MODULE, {cancel, Order}).
-
-order_exists(Id) ->
-  gen_server:call(?MODULE, {exists, Id}).
-
 %% GEN_SERVER CALLBACKS
 
 start_link(BookName) ->
@@ -57,9 +38,29 @@ handle_call({book, Order}, _, Book) ->
       {reply, Res, Book}
   end;
 
-handle_call({cancel, Order}, _, Book) ->
-  {cancelled, Book2} = cancel_order(Order, Book),
+handle_call({cancel, Order, Reason}, _, Book) ->
+  {cancelled, Book2} = cancel_order(Order, Reason, Book),
   {reply, ok, Book2};
+
+handle_call({delete, Order}, _, Book) ->
+  {deleted, Book2} = delete_order(Order, Book),
+  {reply, ok, Book2};
+
+handle_call({close, Order, Txn}, _, Book) ->
+  %% have been filled completely
+  Diff =  Order#marketOrder.quantity - Txn#marketTxn.quantity,
+  case Diff of
+    0 -> true; %% NO OP
+    _ -> 
+      O2 = O#marketOrder{
+        quantity=Diff,
+        ts=market_utils:timestamp(),
+        id=uuid:v4(),
+        state=new
+      },
+      market_order_queue(Order)
+  end,
+  close_order(Order, Txn).
 
 handle_call({exists, #marketOrder{type=Type, symbol=Symbol} = Order}, _, Book) ->
   Orders = dict:fetch(plural(Type), Book),
@@ -129,18 +130,29 @@ save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   market_events:order_placed(Order),
   {saved, Book2}.
 
-cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
-  lager:info("Cancelling Order: ~p", [Order]),
+delete_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   Orders = dict:fetch(plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
   SymbolOrders2 = lists:filter(fun(X) ->
-    lager:info("~p", [X]),
     X#marketOrder.id /= Order#marketOrder.id
   end, SymbolOrders),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
   market_data:delete_order(Order),
+  {deleted, Book2}.
+
+cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Reason, Book) ->
+  lager:info("CANCELLING ORDER: ~p FOR ~p", [Order, Reason]),
+  Book2 = delete_order(Order, Book),
+  market_data:cancel_order(Order, Reason),
   {cancelled, Book2}.
+
+close_order(Order, Txn) ->
+  lager:info("CLOSING ~p WITH TXN ~p", [Order, Txn]),
+  Book2 = delete_order(Order, Book),
+  market_data:close_order(Order, Txn),
+  {closed, Book2}.
+
 
 %% TAKES TWO LISTS
 %% A LIST OF ORDER LISTS

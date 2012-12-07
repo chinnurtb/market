@@ -8,6 +8,15 @@
   quantity            :: integer(),
   quantity_constraint :: none | all,
   time_in_force       :: day | cancelled | immediate | fill,
-  timestamp           :: integer()
+  timestamp           :: integer(),
+  state               :: new | booked | cancelled | filled
+}).
+-record(marketTxn,
+{
+  id                :: integer(),
+  buy               :: integer(),
+  sell              :: integer(),
+  price             :: integer(),
+  quantity          :: integer()
 }).
 -define(SYMBOLS, [ cocaine, heroin, speed, mdma, acid, shrooms, pot, oxycodone, valium, ketamine ] ).

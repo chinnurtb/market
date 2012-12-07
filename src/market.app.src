@@ -25,6 +25,7 @@
     market_orders,
     market_broker,
     market_order_queue,
+    market_maker_sup,
     market_maker,
     market_tests
   ]}

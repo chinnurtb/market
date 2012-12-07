@@ -7,32 +7,75 @@
     terminate/2, code_change/3]).
 
 %% PUBLIC API
+-export([match_order/1]).
+
+match_order(Order) ->
+  lager:info("MATCHING: ~p~n~n", [Order]),
+  Symbol = Order#marketOrder.symbol,
+  Tif = Order#marketOrder.time_in_force,
+  Contras = case Order#marketOrder.type of
+    bid ->
+      market_broker:asks(Symbol);
+    ask ->
+      market_broker:bids(Symbol)
+  end,
+  Group = accumulate_quantity(Order, Contras),
+  Ret = case Group of
+    {0, []} ->
+      case Tif of
+        immediate -> {cancel, Order, immediate};
+        fill -> {cancel, Order, fill};
+        _ ->
+          {book, Order}
+      end;
+    _ -> {execute, Order, Group}
+  end,
+  lager:info("RET: ~p~n", [Ret]),
+  exit(Ret).
+
 %% GEN_SERVER CALLBACKS
 
 start_link() ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+  gen_server:start_link(?MODULE, [], []).
 
 init([]) ->
   process_flag(trap_exit, true),
-  Ref = market_events:subscribe(self()),
-  {ok, Ref}.
+  erlang:send_after(100, self(), pop),
+  S = dict:new(),
+  {ok, S}.
 
 handle_event(_Event, S) -> {ok, S}.
 
-handle_info({order, Order}, S) ->
-  lager:info("MAKER GOT ORDER ~p~n~n", [Order]),
-  Result = case is_valid(Order) of
-    true -> make_market(Order);
-    false -> cancelled
-  end,
-  lager:info("MATCH RESULT: ~p~n~n", [Result]),
-  {noreply, S};
+handle_info(pop, S) ->
+  erlang:send_after(200, self(), pop),
+  {noreply, pop(S)};
 
-handle_info({tick, Symbol, New, Last}, S) ->
-  rematch(Symbol, New, Last),
-  {noreply, S};
+handle_info({'DOWN', Ref, process, _, {execute, Order, Group}}, S) ->
+  {Order, S2} = clear_ref(Ref, S),
+  gen_server:cast(market_broker, {execute, Order, Group}),
+  {noreply, S2};
 
-handle_info(_Msg, S) -> {noreply, S}.
+handle_info({'DOWN', Ref, process, _, {cancel, Order, Reason}}, S) ->
+  {Order, S2} = clear_ref(Ref, S),
+  gen_server:cast(market_broker, {cancel, Order, Reason}),
+  {noreply, S2};
+
+handle_info({'DOWN', Ref, process, _, {book, Order}}, S) ->
+  {Order, S2} = clear_ref(Ref, S),
+  gen_server:cast(market_broker, {book, Order}),
+  {noreply, S2};
+
+handle_info({'DOWN', Ref, process, _, normal}, S) ->
+  {_, S2} = clear_ref(Ref, S),
+  {noreply, S2};
+
+handle_info({'DOWN', Ref, process, _, Reason}, S) ->
+  lager:info("DOWN REASON ~p", [Reason]),
+  {Order, S2} = clear_ref(Ref, S),
+  market_order_queue:push(Order),
+  {noreply, S2};
+
+handle_info(Msg, S) -> lager:info("INFO: ~p", [Msg]), {noreply, S}.
 
 handle_call(_Msg, S) -> {reply, ok, S}.
 
@@ -40,80 +83,23 @@ handle_call(_Msg, _, S) -> {reply, ok, S}.
 
 handle_cast(_Msg, S) -> {noreply, S}.
 
-terminate(Reason, S) ->
+terminate(Reason, _) ->
   lager:info("~p terminating due to ~p", [?MODULE, Reason]),
-  market_events:unsubscribe(S),
   ok.
 
 code_change(_, _, S) -> {ok, S}.
 
-is_valid(Order) ->
-  case Order#marketOrder.limit of
-    none ->
-      market_orders:order_exists(Order);
-    _ ->
-      limit_orders:order_exists(Order)
+pop(S) ->
+  case market_order_queue:pop() of
+    empty -> S;
+    Order ->
+      {_, Ref} = spawn_monitor(?MODULE, match_order, [Order]),
+      dict:store(Ref, Order, S)
   end.
-
-make_market(Order) ->
-  case match_order(Order) of
-    {filled, Orders} ->
-      execute_order(Order, Orders);
-    {partial, _Orders} ->
-      case Order#marketOrder.time_in_force of
-        fill ->
-          market_broker:cancel(Order#marketOrder.id);
-        _ ->
-          lager:info("PARTIAL, BAILING"),
-          %% EXECUTE PARTIAL
-
-          case Order#marketOrder.time_in_force of
-            immediate -> cancel;
-            _ ->
-              ok
-              %% RESUBMIT REMAINDER
-          end
-      end;
-    {cancel, []} ->
-      lager:info("CANCEL ORDER"),
-      market_broker:cancel(Order#marketOrder.id)
-  end.
-
-
-match_order(#marketOrder{symbol=Symbol, type=Type} = Order) ->
-  lager:info("MATCHING: ~p~n~n", [Order]),
-  MarketContras = case Type of
-    bid ->
-      market_orders:get_asks(Symbol);
-    ask ->
-      market_orders:get_bids(Symbol)
-  end,
-  lager:info("MARKET CONTRAS: ~p~n~n", [MarketContras]),
-  SimpleContras = get_simple_market_contras(Order, MarketContras),
-  lager:info("SIMPLE CONTRAS: ~p~n~n", [SimpleContras]),
-  QMatch = Order#marketOrder.quantity,
-  Group = case accumulate_quantity(Order, SimpleContras) of
-    {0, []} ->
-      {cancel, []};
-    {QMatch, Orders} ->
-      {filled, Orders};
-    {Quantity, Orders} ->
-      {partial, Quantity, Orders}
-  end,
-  lager:info("GROUP: ~p~n~n", [Group]),
-  Group.
-
-%% CANT FILL YOUR OWN ORDERS
-%% ONLY WANT NON All-Or-Nothing
-get_simple_market_contras(Order, Contras) ->
-  lists:filter(fun(C) ->
-    B1 = C#marketOrder.user /= Order#marketOrder.user,
-    B2 = C#marketOrder.quantity_constraint == none,
-    B1 and B2
-  end, Contras).
 
 accumulate_quantity(O, C) ->
   accumulate_quantity(O, C, [], 0).
+
 accumulate_quantity(_, [], List, Count) ->
   {Count, List};
 accumulate_quantity(#marketOrder{quantity=Q}, _, L, Count) when
@@ -122,66 +108,25 @@ accumulate_quantity(O, [ H | T ], L, Count) ->
   LookingFor = O#marketOrder.quantity - Count,
   case H#marketOrder.quantity >= LookingFor of
     true ->
-      accumulate_quantity(O, [], L ++ [H], O#marketOrder.quantity);
+      %% IS THIS AN AON CONTRA?
+      case quantity_compatible(LookingFor, H) of
+        true ->
+          accumulate_quantity(O, [], L ++ [H], O#marketOrder.quantity);
+        false ->
+          accumulate_quantity(O, T, L, Count)
+      end;
     false ->
       accumulate_quantity(O, T, L ++ [H], Count + H#marketOrder.quantity)
   end.
 
-execute_order(O, Contras) when is_list(Contras) ->
-  execute_order(O, Contras, []).
-
-execute_order(_, [], R) -> R;
-execute_order(O, [ H | T ], R) ->
-  Price = execution_price(O, H),
-  Quantity = execution_quantity(O, H),
-  lager:info("ATTEMPTING TO EXECUTE ~p AGAINST ~p", [O, H]),
-  lager:info("Q: ~p P:~p", [Quantity, Price]),
-  Result = execute_order(O, H, Price, Quantity),
-  lager:info("EXECUTE RESULT: ~p~n", [Result]),
-  execute_order(O, T, R ++ [Result]).
-
-execute_order(O, C, Price, Quantity) ->
-  Res = market_data:execute(O#marketOrder.id, C#marketOrder.id, Price, Quantity),
-  Res.
-
-
-execution_price(O, C) ->
-  case C#marketOrder.limit of
-    none -> market_data:quote(O#marketOrder.symbol);
-    _ -> C#marketOrder.limit
+quantity_compatible(Quantity, Contra) ->
+  case Contra#marketOrder.quantity_constraint of
+    all -> Quantity >= Contra#marketOrder.quantity_constraint;
+    _ -> true
   end.
 
-execution_quantity(O, C) ->
-  OQ = O#marketOrder.quantity,
-  CQ = C#marketOrder.quantity,
-
-  case OQ > CQ of
-    true -> CQ;
-    false -> OQ
-  end.
-
-%% SIMPLE QUANTITY CONSTRAINT CHECK
-%% FILTER CONTRAS THAT HAVE QCONST
-%% THAT WE CANT MATCH
-%filter_contras_quantity(Order, Contras) ->
-%  C2 = lists:filter(fun(C) ->
-%    #marketOrder{quantity=Quantity,
-%      quantity_constraint=QConst} = Order,
-%    #marketOrder{quantity=Quantity2,
-%      quantity_constraint=QConst2} = C,
-%    QC1 = case QConst of
-%      all -> Quantity > Quantity2;
-%      _ -> true
-%    end,
-%    QC2 = case QConst2 of
-%      all -> Quantity2 > Quantity;
-%      _ -> true
-%    end,
-%    QC2 and QC1
-%  end, Contras),
-%  C2.
-
-%% A SYMBOL TICKED
-%% SO CHECK OUR LIMIT ORDERS
-%% FOR FILLABLES!
-rematch(_Symbol, _New, _Last) -> ok.
+clear_ref(Ref, S) ->
+  Order = dict:fetch(Ref, S),
+  S2 = dict:erase(Ref, S),
+  {Order, S2}.
+  

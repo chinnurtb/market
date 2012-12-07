@@ -15,5 +15,5 @@ local book = redis.call('SORT', 'book:'..side..':'..type..':'..symbol, "BY", ord
         'GET', 'order:*->id', 'GET', 'order:*->user', 'GET', 'order:*->symbol',
         'GET', 'order:*->type', 'GET', 'order:*->limit', 'GET', 'order:*->quantity',
         'GET', 'order:*->quantity_constraint', 'GET', 'order:*->time_in_force',
-        'GET', 'order:*->timestamp', direction)
+        'GET', 'order:*->timestamp', 'GET', 'order:*->state',  direction)
 return book
