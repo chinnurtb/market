@@ -10,9 +10,9 @@
 
 %% PUBLIC API
 -export([get_bids/2, get_asks/2,
-    get_order/1, write_order/1, delete_order/1, cancel_order/2, close_order/2]).
+    get_order/1, write_order/1, cancel_order/2, close_order/2]).
 
--export([quote/1, execute/4]).
+-export([quote/1, execute/5]).
 
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
@@ -26,20 +26,18 @@ get_order(OrderId) ->
 write_order(Order) ->
   gen_server:cast(?MODULE, {write, Order}).
 
-delete_order(OrderId) ->
-  gen_server:cast(?MODULE, {delete, OrderId}).
-
 cancel_order(OrderId, Reason) ->
   gen_server:cast(?MODULE, {cancel, OrderId, Reason}).
+
+close_order(Order, Txn) ->
+  gen_server:cast(?MODULE, {close, Order, Txn}).
 
 quote(Symbol) ->
   gen_server:call(?MODULE, {quote, Symbol}).
 
-execute(Order, Contra, Price, Quantity) ->
-  gen_server:call(?MODULE, {execute, Order, Contra, Price, Quantity}).
+execute(Lock, Order, Contra, Price, Quantity) ->
+  gen_server:call(?MODULE, {execute, Lock, Order, Contra, Price, Quantity}).
 
-close_order(Order, Txn) ->
-  gen_server:call(?MODULE, {close, Order, Txn}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -78,7 +76,7 @@ handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
   end,
   {reply, Reply, S};
 
-handle_call({execute, O, C, P, Q}, _, S) ->
+handle_call({execute, L, O, C, P, Q}, _, S) ->
   Keys = [
     O#marketOrder.id,
     C#marketOrder.id
@@ -103,7 +101,8 @@ handle_call({execute, O, C, P, Q}, _, S) ->
     C#marketOrder.type,
 
     Q,
-    P
+    P,
+    L
   ],
   Ret = case do_script(execute, Keys, Args, S) of
     [<<"cancelled">>, Reason, BadOrder] ->
@@ -125,6 +124,28 @@ handle_call(Msg, _, S) ->
   {reply, ok, S}.
 
 handle_cast({write, Order}, S) ->
+  do_write_order(Order, S),
+  {noreply, S};
+
+handle_cast({cancel, #marketOrder{id=Order}, Reason}, S) ->
+  do_script(cancel, [Order], [Reason], S),
+  {noreply, S};
+
+handle_cast({close, Order, Txn}, S) ->
+  do_write_order(Order, S),
+  TxId = Txn#marketTxn.id,
+  do_script(close, [TxId], [], S),
+  {noreply, S};
+  
+handle_cast(_Msg, S) -> {noreply, S}.
+
+terminate(Reason, _) ->
+  lager:info("~p terminating due to ~p", [?MODULE, Reason]),
+  ok.
+
+code_change(_, _, S) -> {ok, S}.
+
+do_write_order(Order, S) ->
   #marketOrder {
     id=Id,
     user=User,
@@ -142,24 +163,7 @@ handle_cast({write, Order}, S) ->
     _ -> limit
   end,
   do_script(write, [Id, User, Symbol],
-    [Type, Limit, Quantity, QConst, Tif, Ts, OState, Market], S),
-  {noreply, S};
-
-handle_cast({cancel, #marketOrder{id=Order}, Reason}, S) ->
-  do_script(cancel, [Order], [Reason], S),
-  {noreply, S};
-
-handle_cast({delete, #marketOrder{id=Order}}, S) ->
-  do_script(delete, [Order], [], S),
-  {noreply, S};
-
-handle_cast(_Msg, S) -> {noreply, S}.
-
-terminate(Reason, _) ->
-  lager:info("~p terminating due to ~p", [?MODULE, Reason]),
-  ok.
-
-code_change(_, _, S) -> {ok, S}.
+    [Type, Limit, Quantity, QConst, Tif, Ts, OState, Market], S).
 
 load_scripts(Procs, Redis) ->
   Keys = proplists:get_keys(Procs),
@@ -244,9 +248,10 @@ val(A) ->
     "day" -> day;
     "immediate" -> immediate;
     "fill" -> fill;
-    "filled" -> filled;
+    "closed" -> closed;
     "new" -> new;
     "booked" -> booked;
+    "locked" -> locked;
     _ -> Ret
   end.
 

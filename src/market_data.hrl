@@ -9,7 +9,8 @@
   quantity_constraint :: none | all,
   time_in_force       :: day | cancelled | immediate | fill,
   timestamp           :: integer(),
-  state               :: new | booked | cancelled | filled
+  state               :: new | booked | cancelled | closed | locked,
+  retries             :: undefined | integer()
 }).
 -record(marketTxn,
 {

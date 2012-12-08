@@ -15,10 +15,7 @@ start_link(BookName) ->
 
 init([BookName]) ->
   process_flag(trap_exit, true),
-  Book = dict:new(),
-  Book2 = dict:store(bids, load_bids(BookName), Book),
-  Book3 = dict:store(asks, load_asks(BookName), Book2),
-  {ok, Book3}.
+  {ok, load_books(BookName)}.
 
 handle_event(_Event, S) -> {ok, S}.
 
@@ -38,29 +35,6 @@ handle_call({book, Order}, _, Book) ->
       {reply, Res, Book}
   end;
 
-handle_call({cancel, Order, Reason}, _, Book) ->
-  {cancelled, Book2} = cancel_order(Order, Reason, Book),
-  {reply, ok, Book2};
-
-handle_call({delete, Order}, _, Book) ->
-  {deleted, Book2} = delete_order(Order, Book),
-  {reply, ok, Book2};
-
-handle_call({close, Order, Txn}, _, Book) ->
-  %% have been filled completely
-  Diff =  Order#marketOrder.quantity - Txn#marketTxn.quantity,
-  case Diff of
-    0 -> true; %% NO OP
-    _ -> 
-      O2 = O#marketOrder{
-        quantity=Diff,
-        ts=market_utils:timestamp(),
-        id=uuid:v4(),
-        state=new
-      },
-      market_order_queue(Order)
-  end,
-  close_order(Order, Txn).
 
 handle_call({exists, #marketOrder{type=Type, symbol=Symbol} = Order}, _, Book) ->
   Orders = dict:fetch(plural(Type), Book),
@@ -73,6 +47,30 @@ handle_call({Symbol, Type}, _, Book) ->
 
 handle_call(_Msg, _, S) -> {reply, ok, S}.
 
+handle_cast({cancel, Order, Reason}, Book) ->
+  {cancelled, Book2} = cancel_order(Order, Reason, Book),
+  {noreply, Book2};
+
+handle_cast({delete, Order}, Book) ->
+  {deleted, Book2} = delete_order(Order, Book),
+  {noreply, Book2};
+
+handle_cast({close, Order, Txn}, Book) ->
+  Diff =  Order#marketOrder.quantity - Txn#marketTxn.quantity,
+  case Diff of
+    0 -> true; %% NO OP
+    _ -> 
+      O2 = Order#marketOrder{
+        quantity=Diff,
+        timestamp=market_utils:timestamp(),
+        id=uuid:to_string(uuid:uuid4()),
+        state=new
+      },
+      market_order_queue:push(O2)
+  end,
+  {closed, Book2} = close_order(Order, Txn, Book),
+  {noreply, Book2};
+
 handle_cast(_Msg, S) -> {noreply, S}.
 
 terminate(Reason, _) ->
@@ -80,6 +78,11 @@ terminate(Reason, _) ->
   ok.
 
 code_change(_, _, S) -> {ok, S}.
+
+load_books(BookName) ->
+  Book = dict:new(),
+  Book2 = dict:store(bids, load_bids(BookName), Book),
+  dict:store(asks, load_asks(BookName), Book2).
 
 load_bids(BookName) ->
   F = fun(X) -> market_data:get_bids(BookName, X) end,
@@ -138,8 +141,7 @@ delete_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   end, SymbolOrders),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
-  market_data:delete_order(Order),
-  {deleted, Book2}.
+  Book2.
 
 cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Reason, Book) ->
   lager:info("CANCELLING ORDER: ~p FOR ~p", [Order, Reason]),
@@ -147,10 +149,11 @@ cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Reason, Book) ->
   market_data:cancel_order(Order, Reason),
   {cancelled, Book2}.
 
-close_order(Order, Txn) ->
+close_order(Order, Txn, Book) ->
   lager:info("CLOSING ~p WITH TXN ~p", [Order, Txn]),
   Book2 = delete_order(Order, Book),
   market_data:close_order(Order, Txn),
+  market_events:order_closed(Txn),
   {closed, Book2}.
 
 

@@ -4,7 +4,7 @@ end
 local get_order = function(id)
   local o = redis.call('HMGET','order:'..id,
     'limit', 'quantity', 'quantity_constraint',
-    'tif', 'ts', 'user', 'symbol', 'type', 'state')
+    'time_in_force', 'timestamp', 'user', 'symbol', 'type', 'state')
   return {
     id=id,
     limit=o[1],

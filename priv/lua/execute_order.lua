@@ -24,7 +24,7 @@ local contra = {
   type=ARGV[16]
 }
 
-local quantity, price = tonumber(ARGV[17]), tonumber(ARGV[18])
+local quantity, price, lock = tonumber(ARGV[17]), tonumber(ARGV[18]), ARGV[19]
 local buy, sell
 
 if order.type == 'bid' then
@@ -40,11 +40,17 @@ local tx_cost = price * quantity
 local cash = tonumber(redis.call('HGET', 'user:'..buy.user, 'cash')) or 0
 local holdings = tonumber(redis.call('HGET', 'user:'..sell.user, buy.symbol)) or 0
 
-if redis.call('HGET', 'order:'..buy.id, 'status')  == 'locked' then
+local buy_lock = redis.call('HGET', 'order:'..buy.id, 'lock') or nil
+local sell_lock = redis.call('HGET', 'order:'..sell.id, 'lock') or nil
+log(buy_lock)
+log(sell_lock)
+log(lock)
+
+if buy_lock ~= nil and buy_lock ~= lock then
   return {'cancelled', 'locked', buy.id}
 end
-if redis.call('HGET', 'order:'..sell.id, 'status') == 'locked' then
-  return {'cancelled', 'locked', sell.id }
+if sell_lock ~= nil and sell_lock ~= lock then
+  return {'cancelled', 'locked', sell.id}
 end
 
 if tx_cost > cash then
@@ -61,10 +67,10 @@ else
     redis.call('HINCRBY', 'user:'..sell.user, 'cash', tx_cost)
     redis.call('HMSET', 'tx:'..tx_id, 'sell', sell.id, 'buy', buy.id,
                 'quantity', quantity, 'price', price)
-    redis.call('SADD', 'user:'..buy.user..':transactions', tx_id)
-    redis.call('SADD', 'user:'..sell.user..':transactions', tx_id)
-    redis.call('HSET', 'order:'..buy.id, 'status', 'locked')
-    redis.call('HSET', 'order:'..sell.id, 'status', 'locked')
+    redis.call('SADD', 'user:transactions:'..buy.user, tx_id)
+    redis.call('SADD', 'user:transactions:'..sell.user, tx_id)
+    redis.call('HSET', 'order:'..buy.id, 'lock', lock)
+    redis.call('HSET', 'order:'..sell.id, 'lock', lock)
     log("transaction "..tx_id.." complete")
     return {tx_id, quantity, price}
   end

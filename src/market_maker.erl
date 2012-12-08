@@ -28,7 +28,16 @@ match_order(Order) ->
         _ ->
           {book, Order}
       end;
-    _ -> {execute, Order, Group}
+    {Q, _} -> 
+      case Q < Order#marketOrder.quantity of
+        true ->
+          case Tif of
+            fill -> {cancel, Order, fill};
+            _ ->
+              {execute, Order, Group}
+          end;
+        _ -> {execute, Order, Group}
+      end
   end,
   lager:info("RET: ~p~n", [Ret]),
   exit(Ret).
@@ -40,14 +49,14 @@ start_link() ->
 
 init([]) ->
   process_flag(trap_exit, true),
-  erlang:send_after(100, self(), pop),
+  erlang:send_after(10, self(), pop),
   S = dict:new(),
   {ok, S}.
 
 handle_event(_Event, S) -> {ok, S}.
 
 handle_info(pop, S) ->
-  erlang:send_after(200, self(), pop),
+  erlang:send_after(20, self(), pop),
   {noreply, pop(S)};
 
 handle_info({'DOWN', Ref, process, _, {execute, Order, Group}}, S) ->
