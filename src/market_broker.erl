@@ -99,6 +99,7 @@ handle_call({order, Order}, From, S) ->
     false ->
       Retries = Order#marketOrder.retries,
       Order2 = Order#marketOrder{retries=Retries+1},
+      market_data:write_order(Order2),
       market_order_queue:push(Order2),
       dict:store(Order#marketOrder.id, From, S)
   end,
@@ -167,7 +168,6 @@ execute_group(Order, {QuantityFilled, Group}, S) ->
     {closed, _, Txns} ->
       lager:debug("EXECUTE RET: ~p", [Ret]),
       %% make sure order is written so
-      market_data:write_order(Order),
       lists:foreach(fun({O, X}) ->
         close_order(O,X)
       end, Txns),
@@ -238,6 +238,7 @@ rollback(O, []) ->
 
 rollback(O, T) -> rollback(O, T, []).
 
+rollback(_, [], R) -> R;
 rollback(O, [ H | T ], R) ->
   R2 = R ++ [rollback_transaction(H)],
   rollback(O, T, R2).
@@ -247,7 +248,7 @@ execute_pair(L, B, S) ->
   Q = trade_quantity(B, S),
   market_data:execute(L, B, S, P, Q).
   
-rollback_transaction(Txn) ->
+rollback_transaction({_, Txn}) ->
   lager:debug("ROLLING BACK TRANSACTION ~p", [Txn]),
   market_data:rollback(Txn).
 

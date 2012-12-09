@@ -10,7 +10,7 @@
 
 %% PUBLIC API
 -export([get_bids/2, get_asks/2,
-    get_order/1, write_order/1, cancel_order/2, close_order/1]).
+    get_order/1, write_order/1, book_order/1, cancel_order/2, close_order/1]).
 
 -export([quote/1, execute/5, rollback/1]).
 
@@ -25,6 +25,9 @@ get_order(OrderId) ->
 
 write_order(Order) ->
   gen_server:cast(?MODULE, {write, Order}).
+
+book_order(Order) ->
+  gen_server:cast(?MODULE, {book, Order}).
 
 cancel_order(OrderId, Reason) ->
   gen_server:cast(?MODULE, {cancel, OrderId, Reason}).
@@ -80,10 +83,6 @@ handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
   {reply, Reply, S};
 
 handle_call({execute, L, O, C, P, Q}, _, S) ->
-  lager:info("pre-writing ~p", [O]),
-  do_write_order(O, S),
-  lager:info("pre-writing ~p", [C]),
-  do_write_order(C, S),
   Keys = [
     O#marketOrder.id,
     C#marketOrder.id
@@ -111,7 +110,8 @@ handle_call({execute, L, O, C, P, Q}, _, S) ->
   {reply, Ret, S};
 
 handle_call({rollback, #marketTxn{id=Id, buy=Buy,sell=Sell} }, _, S) ->
-  do_script(rollback, [Id, Buy, Sell], [], S);
+  Ret = do_script(rollback, [Id, Buy, Sell], [], S),
+  {reply, Ret, S}; 
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
@@ -120,6 +120,15 @@ handle_call(Msg, _, S) ->
 handle_cast({write, Order}, S) ->
   do_write_order(Order, S),
   {noreply, S};
+
+handle_cast({book, #marketOrder{id=Id, type=Side, symbol=Symbol, limit=Limit}}, S) ->
+  Market = case Limit of
+    none -> "market";
+    _ -> "limit"
+  end,
+  do_script(book, [Id, Symbol, Side, Market], [], S),
+  {noreply, S};
+
 
 handle_cast({cancel, #marketOrder{id=Order}, Reason}, S) ->
   do_script(cancel, [Order], [Reason], S),
@@ -151,12 +160,8 @@ do_write_order(Order, S) ->
     timestamp=Ts,
     state=OState
   } = Order,
-  Market = case Limit of
-    none -> market;
-    _ -> limit
-  end,
   do_script(write, [Id, User, Symbol],
-    [Type, Limit, Quantity, QConst, Tif, Ts, OState, Market], S).
+    [Type, Limit, Quantity, QConst, Tif, Ts, OState], S).
 
 load_scripts(Procs, Redis) ->
   Keys = proplists:get_keys(Procs),

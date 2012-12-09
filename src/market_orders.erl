@@ -113,7 +113,7 @@ user_orders_by_symbol(User, Symbol, Type, Book) ->
   end, symbol_orders(Symbol, Type, Book)).
 
 save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
-  lager:info("Saving Order: ~p", [Order]),
+  lager:info("Booking Order: ~p", [Order]),
   Orders = dict:fetch(plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
   SymbolOrders2 = lists:sort(fun(A, B) ->
@@ -133,7 +133,7 @@ save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   end, SymbolOrders ++ [Order]),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
   Book2 = dict:store(plural(Type), Orders2, Book),
-  market_data:write_order(Order),
+  market_data:book_order(Order),
   market_events:order_placed(Order),
   {saved, Book2}.
 
