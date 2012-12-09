@@ -13,7 +13,8 @@
     bids/1, asks/1,
     market_bids/1, limit_bids/1,
     market_asks/1, limit_asks/1,
-    book_order/1
+    book_order/1,
+    refresh_books/0
 ]).
 
 buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
@@ -76,6 +77,10 @@ book_order(Order) ->
     _ ->
       gen_server:call(limit_orders, {book, Order2})
   end.
+
+refresh_books() ->
+  gen_server:cast(market_orders, refresh),
+  gen_server:cast(limit_orders, refresh).
 
 %% GEN_SERVER CALLBACKS
 

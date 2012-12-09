@@ -71,9 +71,10 @@ handle_cast({close, Order, Txn}, Book) ->
   {closed, Book2} = close_order(Order, Txn, Book),
   {noreply, Book2};
 
-%handle_cast(flush, Book) ->
-%  BookName = atom_to_list(?MODULE)
-%  {noreply, Book}
+handle_cast(reload, Book) ->
+  BookName = dict:fetch(name, Book),
+  Book2 = load_books(BookName),
+  {noreply, Book2};
 
 handle_cast(_Msg, S) -> {noreply, S}.
 
@@ -85,8 +86,9 @@ code_change(_, _, S) -> {ok, S}.
 
 load_books(BookName) ->
   Book = dict:new(),
-  Book2 = dict:store(bids, load_bids(BookName), Book),
-  dict:store(asks, load_asks(BookName), Book2).
+  Book2 = dict:store(name, BookName, Book),
+  Book3 = dict:store(bids, load_bids(BookName), Book2),
+  dict:store(asks, load_asks(BookName), Book3).
 
 load_bids(BookName) ->
   F = fun(X) -> market_data:get_bids(BookName, X) end,

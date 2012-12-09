@@ -105,6 +105,7 @@ handle_call({execute, L, O, C, P, Q}, _, S) ->
         }
       };
     {error, Error} ->
+      lager:error("ERROR EXECUTING ORDERS ~p~n~n~p~n~n", [O, C]),
       {cancelled, val(Error), none}
   end,
   {reply, Ret, S};
