@@ -10,9 +10,9 @@
 
 %% PUBLIC API
 -export([get_bids/2, get_asks/2,
-    get_order/1, write_order/1, cancel_order/2, close_order/2]).
+    get_order/1, write_order/1, cancel_order/2, close_order/1]).
 
--export([quote/1, execute/5]).
+-export([quote/1, execute/5, rollback/1]).
 
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
@@ -29,14 +29,17 @@ write_order(Order) ->
 cancel_order(OrderId, Reason) ->
   gen_server:cast(?MODULE, {cancel, OrderId, Reason}).
 
-close_order(Order, Txn) ->
-  gen_server:cast(?MODULE, {close, Order, Txn}).
+close_order(Txn) ->
+  gen_server:cast(?MODULE, {close, Txn}).
 
 quote(Symbol) ->
   gen_server:call(?MODULE, {quote, Symbol}).
 
 execute(Lock, Order, Contra, Price, Quantity) ->
   gen_server:call(?MODULE, {execute, Lock, Order, Contra, Price, Quantity}).
+
+rollback(Txn) ->
+  gen_server:call(?MODULE, {rollback, Txn}).
 
 
 %% GEN_SERVER CALLBACKS
@@ -77,29 +80,15 @@ handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
   {reply, Reply, S};
 
 handle_call({execute, L, O, C, P, Q}, _, S) ->
+  lager:info("pre-writing ~p", [O]),
+  do_write_order(O, S),
+  lager:info("pre-writing ~p", [C]),
+  do_write_order(C, S),
   Keys = [
     O#marketOrder.id,
     C#marketOrder.id
   ],
   Args = [
-    O#marketOrder.limit,
-    O#marketOrder.quantity,
-    O#marketOrder.quantity_constraint,
-    O#marketOrder.time_in_force,
-    O#marketOrder.timestamp,
-    O#marketOrder.user,
-    O#marketOrder.symbol,
-    O#marketOrder.type,
-  
-    C#marketOrder.limit,
-    C#marketOrder.quantity,
-    C#marketOrder.quantity_constraint,
-    C#marketOrder.time_in_force,
-    C#marketOrder.timestamp,
-    C#marketOrder.user,
-    C#marketOrder.symbol,
-    C#marketOrder.type,
-
     Q,
     P,
     L
@@ -115,9 +104,14 @@ handle_call({execute, L, O, C, P, Q}, _, S) ->
           buy=O#marketOrder.id,
           sell=C#marketOrder.id
         }
-      }
+      };
+    {error, Error} ->
+      {cancelled, val(Error), none}
   end,
   {reply, Ret, S};
+
+handle_call({rollback, #marketTxn{id=Id, buy=Buy,sell=Sell} }, _, S) ->
+  do_script(rollback, [Id, Buy, Sell], [], S);
 
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
@@ -131,8 +125,7 @@ handle_cast({cancel, #marketOrder{id=Order}, Reason}, S) ->
   do_script(cancel, [Order], [Reason], S),
   {noreply, S};
 
-handle_cast({close, Order, Txn}, S) ->
-  do_write_order(Order, S),
+handle_cast({close, Txn}, S) ->
   TxId = Txn#marketTxn.id,
   do_script(close, [TxId], [], S),
   {noreply, S};
@@ -191,6 +184,7 @@ load_script(Script, Redis) ->
   Reply.
 
 do_script(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
+  lager:info("DOING SCRIPT ~p", [ScriptName]),
   Script = proplists:get_value(ScriptName, Procs),
   case eredis:q(Redis, ["EVALSHA", Script, length(Keys)] ++ Keys ++ Args) of
     {ok, Reply} -> Reply;

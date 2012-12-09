@@ -9,7 +9,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, [
+    {ok, { {one_for_one, 10, 60}, [
       ?MAKER(1),
       ?MAKER(2),
       ?MAKER(3),

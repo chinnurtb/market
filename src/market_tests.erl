@@ -11,9 +11,9 @@ setup() ->
   eredis:q(Redis, ["HSET", "user:1", "cash", "10000000"]),
   eredis:q(Redis, ["HSET", "user:2", "cocaine", "10000000"]),
   eredis:q(Redis, ["HSET", "user:3", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:4", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:5", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:6", "cocaine", "10000000"]).
+  eredis:q(Redis, ["HSET", "user:4", "cocaine", "10000000"]).
+  %eredis:q(Redis, ["HSET", "user:5", "cocaine", "10000000"]),
+  %eredis:q(Redis, ["HSET", "user:6", "cocaine", "10000000"]).
 
 
 test() ->

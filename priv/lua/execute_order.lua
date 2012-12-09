@@ -1,30 +1,9 @@
 local order_id, contra_id = KEYS[1], KEYS[2]
 
-local order = {
-  id=order_id,
-  limit=ARGV[1],
-  quantity=ARGV[2],
-  quantity_constraint=ARGV[3],
-  tif=ARGV[4],
-  ts=ARGV[5],
-  user=ARGV[6],
-  symbol=ARGV[7],
-  type=ARGV[8]
-}
+local order = get_order(order_id)
+local contra = get_order(contra_id)
 
-local contra = {
-  id=contra_id,
-  limit=ARGV[9],
-  quantity=ARGV[10],
-  quantity_constraint=ARGV[11],
-  tif=ARGV[12],
-  ts=ARGV[13],
-  user=ARGV[14],
-  symbol=ARGV[15],
-  type=ARGV[16]
-}
-
-local quantity, price, lock = tonumber(ARGV[17]), tonumber(ARGV[18]), ARGV[19]
+local quantity, price, lock = tonumber(ARGV[1]), tonumber(ARGV[2]), ARGV[3]
 local buy, sell
 
 if order.type == 'bid' then

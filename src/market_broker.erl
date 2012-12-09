@@ -66,7 +66,7 @@ limit_asks(Symbol) ->
   gen_server:call(limit_orders, {Symbol, asks}).
 
 book_order(Order) ->
-  lager:info("book_order"),
+  lager:debug("book_order"),
   Order2 = Order#marketOrder {
     state=booked
   },
@@ -94,7 +94,7 @@ handle_call(_Msg, S) -> {reply, ok, S}.
 handle_call({order, Order}, From, S) ->
   S2 = case Order#marketOrder.retries > 10 of
     true ->
-      lager:info("TOO MANY RETRIES ~p", [Order]),
+      lager:error("TOO MANY RETRIES ~p", [Order]),
       dict:erase(Order#marketOrder.id, S);
     false ->
       Retries = Order#marketOrder.retries,
@@ -121,10 +121,10 @@ handle_cast({book, Order}, S) ->
   Id = Order#marketOrder.id,
   case book_order(Order) of
     {error, Reason} ->
-      lager:info("BOOKING ERROR: ~p", [Reason]),
+      lager:debug("BOOKING ERROR: ~p", [Reason]),
       notify_orderer(Id, {error, Order, Reason}, S);
     {saved, Order2} ->
-      lager:info("BOOKED ~p", [Order2]),
+      lager:debug("BOOKED ~p", [Order2]),
       notify_orderer(Id, {booked, Order2}, S)
   end,
   {noreply, S};
@@ -134,7 +134,7 @@ handle_cast(_Msg, S) -> {noreply, S}.
 handle_info(_Msg, S) -> {noreply, S}.
 
 terminate(Reason, _) ->
-  lager:info("~p terminating due to ~p", [?MODULE, Reason]),
+  lager:debug("~p terminating due to ~p", [?MODULE, Reason]),
   ok.
 
 code_change(_, _, S) -> {ok, S}.
@@ -160,18 +160,17 @@ close_order(Order, Txn) ->
   end.
 
 execute_group(Order, {QuantityFilled, Group}, S) ->
-  lager:info("GROUP IS ~p", [Group]),
+  lager:debug("GROUP IS ~p", [Group]),
   GroupLock = uuid:to_string(uuid:uuid4()),
   Ret = execute_group_member(GroupLock, Order, Group, Order#marketOrder.quantity, []),
   case Ret of
     {closed, _, Txns} ->
-      lager:info("EXECUTE RET: ~p", [Ret]),
+      lager:debug("EXECUTE RET: ~p", [Ret]),
       %% make sure order is written so
       market_data:write_order(Order),
       lists:foreach(fun({O, X}) ->
         close_order(O,X)
       end, Txns),
-      {_, Last} = lists:last(Txns),
       Diff =  Order#marketOrder.quantity - QuantityFilled,
       case Diff of
         0 -> true; %% NO OP
@@ -184,19 +183,13 @@ execute_group(Order, {QuantityFilled, Group}, S) ->
           },
           market_order_queue:push(O2)
       end;
-    _ -> ok
+    _ -> true
   end,
   notify_orderer(Order#marketOrder.id, Ret, S).
 
 execute_group_member(_, O, [], _, R) -> {closed, O, R};
 execute_group_member(Lock, O, [ H | T ], Q, R) ->
-  {Buy, Sell} = case O#marketOrder.type of
-    bid ->
-      {O, H};
-    ask ->
-      {H, O}
-  end,
-  case execute_pair(Lock, Buy, Sell) of
+  case execute_pair(Lock, O, H) of
     {closed, Tx} ->
       R2 = R ++ [{H, Tx}],
       Q2 = Q - Tx#marketTxn.quantity,
@@ -213,25 +206,30 @@ execute_group_member(Lock, O, [ H | T ], Q, R) ->
         _ -> O
       end,
       case Reason of 
-        locked -> ok; %% DO NOTHING
+        locked -> true; %% DO NOTHING
         _ ->
-          cancel_order(BadOrder, Reason)
+          case BadOrder of
+            none -> true;
+            _ -> cancel_order(BadOrder, Reason)
+          end
       end,
-      rollback(O2, R)
+      rollback(O2, R);
+    _ ->
+      rollback(O, R)
   end.
 
 rollback(O, []) ->
   case O#marketOrder.quantity_constraint of
     all ->
-      lager:info("rollback cancel"),
+      lager:debug("ROLLBACK CANCEL ~p", [O]),
       {cancelled, O, all};
     _ ->
       %% REQUEUE ORDER
       case O#marketOrder.state of
         cancelled -> {cancelled, "NON SUFFICIENT FUNDS", O};
         _ ->
-          lager:info("rollback requeue"),
           spawn(fun() ->
+            lager:debug("ROLLBACK REQUEUE ~p", [O]),
             gen_server:call(?MODULE, {order, O})
           end),
           {requeued, O}
@@ -241,8 +239,7 @@ rollback(O, []) ->
 rollback(O, T) -> rollback(O, T, []).
 
 rollback(O, [ H | T ], R) ->
-  lager:info("roll back ~p ~p", [O, R]),
-  R2 = R ++ [rollback_transaction(O, H)],
+  R2 = R ++ [rollback_transaction(H)],
   rollback(O, T, R2).
 
 execute_pair(L, B, S) ->
@@ -250,7 +247,9 @@ execute_pair(L, B, S) ->
   Q = trade_quantity(B, S),
   market_data:execute(L, B, S, P, Q).
   
-rollback_transaction(Order, Contra) -> ok.
+rollback_transaction(Txn) ->
+  lager:debug("ROLLING BACK TRANSACTION ~p", [Txn]),
+  market_data:rollback(Txn).
 
 trade_quantity(B, S) ->
   case B#marketOrder.quantity >=

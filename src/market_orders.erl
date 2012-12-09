@@ -71,6 +71,10 @@ handle_cast({close, Order, Txn}, Book) ->
   {closed, Book2} = close_order(Order, Txn, Book),
   {noreply, Book2};
 
+%handle_cast(flush, Book) ->
+%  BookName = atom_to_list(?MODULE)
+%  {noreply, Book}
+
 handle_cast(_Msg, S) -> {noreply, S}.
 
 terminate(Reason, _) ->
@@ -143,7 +147,7 @@ delete_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   Book2 = dict:store(plural(Type), Orders2, Book),
   Book2.
 
-cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Reason, Book) ->
+cancel_order(Order, Reason, Book) ->
   lager:info("CANCELLING ORDER: ~p FOR ~p", [Order, Reason]),
   Book2 = delete_order(Order, Book),
   market_data:cancel_order(Order, Reason),
@@ -152,7 +156,7 @@ cancel_order(#marketOrder{symbol=Symbol, type=Type} = Order, Reason, Book) ->
 close_order(Order, Txn, Book) ->
   lager:info("CLOSING ~p WITH TXN ~p", [Order, Txn]),
   Book2 = delete_order(Order, Book),
-  market_data:close_order(Order, Txn),
+  market_data:close_order(Txn),
   market_events:order_closed(Txn),
   {closed, Book2}.
 
