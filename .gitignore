@@ -5,3 +5,6 @@ ebin/
 data/*.rdb
 data/*.aof
 data/*.log
+priv/python/gateway/bin/
+priv/python/gateway/include/
+priv/python/gateway/lib/

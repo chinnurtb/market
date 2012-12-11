@@ -7,8 +7,6 @@
 
 setup() ->
   {ok, Redis} = eredis:start_link(),
-  eredis:q(Redis, ["FLUSHDB"]),
-  timer:sleep(1000),
   gen_server:cast(market_orders, reload),
   gen_server:cast(limit_orders, reload),
   eredis:q(Redis, ["HSET", "user:1", "cash", "10000000"]),

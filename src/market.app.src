@@ -2,7 +2,7 @@
  [
   {description, "MarketMadness"},
   {vsn, "0.0.1"},
-  {registered, []},
+  {registered, [market_broker]},
   {applications, [
                   kernel,
                   stdlib,
@@ -10,10 +10,12 @@
                   crypto,
                   appmon,
                   eredis,
-                  lager
+                  lager,
+                  erlzmq2
                  ]},
   {mod, { market_app, []}},
   {env, [
+    {publish, "tcp://*:5560"}
   ]},
   {modules, [
     market_app,
@@ -21,6 +23,8 @@
     market_data_sup,
     market_event,
     market_events,
+    market_pub_proto,
+    market_pub,
     market_data,
     market_ticker,
     market_orders,
@@ -28,6 +32,7 @@
     market_order_queue,
     market_maker_sup,
     market_maker,
-    market_tests
+    market_tests,
+    market_utils
   ]}
  ]}.

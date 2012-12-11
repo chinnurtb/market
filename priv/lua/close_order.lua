@@ -9,7 +9,7 @@ local market
 
 if buy.limit == 'none' then market = "market" else market = "limit" end
 redis.call('SREM', 'user:orders:'..buy.user, buy.id)
-redis.call('SREM', 'book:bid:'..market..':'..market..':'..buy.symbol, buy.id)
+redis.call('SREM', 'book:bid:'..market..':'..buy.symbol, buy.id)
 redis.call('HSET', 'order:'..buy.id, 'state', 'closed')
 redis.call('SADD', 'order:'..buy.id..':contras', tx)
 redis.call('LPUSH', 'user:orders:'..buy.user..':closed', buy.id)
