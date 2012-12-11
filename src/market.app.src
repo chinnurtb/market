@@ -11,7 +11,7 @@
                   appmon,
                   eredis,
                   lager,
-                  erlzmq2
+                  erlzmq
                  ]},
   {mod, { market_app, []}},
   {env, [

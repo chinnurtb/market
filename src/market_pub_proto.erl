@@ -32,3 +32,20 @@ order(Order) ->
           {<<"quantity_constraint">>, QConst2},
           {<<"time_in_force">>, list_to_binary(atom_to_list(Tif))}
   ]}}]}).
+
+txn(Txn) ->
+  #marketTxn {
+    buy=Buy,
+    sell=Sell,
+    price=Price,
+    quantity=Quantity
+  } = Txn,
+  msgpack:pack({[
+    {<<"type">>, <<"txn">>},
+    {<<"data">>, {[
+          {<<"buy">>, list_to_binary(Buy)},
+          {<<"sell">>, list_to_binary(Sell)},
+          {<<"quantity">>, Quantity},
+          {<<"price">>, Price}
+  ]}}]}).
+

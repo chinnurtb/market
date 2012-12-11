@@ -36,17 +36,18 @@ for k,v in ipairs(expired) do
 end
 redis.call('HMSET', buy.symbol, 'price', ret[3], 'last_volume', ret[4])
 
+
 local set_stats = function(symbol, type, price, quantity, ts)
-  redis.call('HINCRBY', symbol..':stats:'..type, ts..'_volume', quantity)
-  local pret = redis.call('HMGET', symbol..':stats:'..type, ts..'_price_high', ts..'_price_low')
+  redis.call('INCRBY', symbol..':stats:'..type..':'..ts..':volume', quantity)
+  local pret = redis.call('MGET', symbol..':stats:'..type..':'..ts..':price:high', symbol..':stats:'..type..':'..ts..':price:low')
 
   local high = tonumber(pret[1]) or 0
   local low = tonumber(pret[2]) or 0
   if price > high then
-    redis.call('HSET', symbol..':stats:'..type, ts..'_price_high', price)
+    redis.call('SET', symbol..':stats:'..type..':'..ts..':price:high', price)
   end
   if price < low or low == 0 then
-    redis.call('HSET', symbol..':stats:'..type, ts..'_price_low', price)
+    redis.call('SET', symbol..':stats:'..type..':'..ts..':price:low', price)
   end
   redis.call('SADD', symbol..':'..type, ts)
 end

@@ -19,26 +19,25 @@ start_link() ->
 init([]) ->
   process_flag(trap_exit, true),
   {ok, Endpoint} = application:get_env(publish),
-  lager:info("ENDPOINT: ~p", [Endpoint]),
-  {ok, Context} = erlzmq:context(),
-  {ok, Pub} = erlzmq:socket(Context, pub),
-  ok = erlzmq:bind(Pub, Endpoint),
+  zmq:start_link(),
+  {ok, Pub} = zmq:socket(pub, []),
+  ok = zmq:bind(Pub, Endpoint),
   Ref = market_events:subscribe(self()),
   S = #state{socket=Pub, events=Ref},
   {ok, S}.
 
 handle_event(_Event, S) -> {ok, S}.
 
-handle_info({quotes, Quotes}, #state{socket=Pub}=S) ->
-  erlzmq:send(Pub, market_pub_proto:quotes(Quotes)),
-  {noreply, S};
+%handle_info({cancelled, Order}, #state{socket=Pub}=S) ->
+  %erlzmq:send(Pub, market_pub_proto:cancelled(Order)),
+%  {noreply, S};
 
 handle_info({closed, Txn}, #state{socket=Pub}=S) ->
-  erlzmq:send(Pub, market_pub_proto:txn(Txn)),
+  zmq:send(Pub, market_pub_proto:txn(Txn)),
   {noreply, S};
 
 handle_info({order, Order}, #state{socket=Pub}=S) ->
-  erlzmq:send(Pub, market_pub_proto:order(Order)),
+  zmq:send(Pub, market_pub_proto:order(Order)),
   {noreply, S};
 
 handle_info(Msg, S) ->
@@ -54,6 +53,6 @@ handle_cast(_Msg, S) -> {noreply, S}.
 terminate(Reason, #state{socket=Pub, events=Ref}) ->
   lager:info("~p terminating due to ~p", [?MODULE, Reason]),
   market_events:unsubscribe(Ref),
-  erlzmq:close(Pub).
+  zmq:close(Pub).
 
 code_change(_, _, S) -> {ok, S}.
