@@ -10,9 +10,7 @@
                   crypto,
                   appmon,
                   eredis,
-                  lager,
-                  cowboy,
-                  gproc
+                  lager
                  ]},
   {mod, { market_app, []}},
   {env, [
@@ -30,8 +28,6 @@
     market_order_queue,
     market_maker_sup,
     market_maker,
-    market_websocket,
-    market_api,
     market_tests
   ]}
  ]}.
