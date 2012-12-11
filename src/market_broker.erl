@@ -104,7 +104,6 @@ handle_call({order, Order}, From, S) ->
     false ->
       Retries = Order#marketOrder.retries,
       Order2 = Order#marketOrder{retries=Retries+1},
-      market_data:write_order(Order2),
       market_order_queue:push(Order2),
       dict:store(Order#marketOrder.id, From, S)
   end,
@@ -115,13 +114,16 @@ handle_call(_Msg, _, S) -> {reply, ok, S}.
 handle_cast({execute, Order, Group}, S) ->
   Id = Order#marketOrder.id,
   notify_orderer(Id, {executing, Order, Group}, S),
-  execute_group(Order, Group, S),
-  {noreply, S};
+  Ret = execute_group(Order, Group),
+  notify_orderer(Id, Ret, S),
+  S2 = clear_orderer(Id, S),
+  {noreply, S2};
 
 handle_cast({cancel, Order, Reason}, S) ->
   Id = Order#marketOrder.id,
   notify_orderer(Id, {cancelled, Order, Reason}, S),
-  {noreply, S};
+  S2 = clear_orderer(Id, S),
+  {noreply, S2};
 
 handle_cast({book, Order}, S) ->
   Id = Order#marketOrder.id,
@@ -133,7 +135,8 @@ handle_cast({book, Order}, S) ->
       lager:debug("BOOKED ~p", [Order2]),
       notify_orderer(Id, {booked, Order2}, S)
   end,
-  {noreply, S};
+  S2 = clear_orderer(Id, S),
+  {noreply, S2};
 
 handle_cast(_Msg, S) -> {noreply, S}.
 
@@ -165,7 +168,7 @@ close_order(Order, Txn) ->
       gen_server:cast(limit_orders, {close, Order, Txn})
   end.
 
-execute_group(Order, {QuantityFilled, Group}, S) ->
+execute_group(Order, {QuantityFilled, Group}) ->
   lager:debug("GROUP IS ~p", [Group]),
   GroupLock = uuid:to_string(uuid:uuid4()),
   Ret = execute_group_member(GroupLock, Order, Group, Order#marketOrder.quantity, []),
@@ -189,8 +192,7 @@ execute_group(Order, {QuantityFilled, Group}, S) ->
           market_order_queue:push(O2)
       end;
     _ -> true
-  end,
-  notify_orderer(Order#marketOrder.id, Ret, S).
+  end.
 
 execute_group_member(_, O, [], _, R) -> {closed, O, R};
 execute_group_member(Lock, O, [ H | T ], Q, R) ->
@@ -286,4 +288,10 @@ notify_orderer(Id, Msg, S) ->
       From ! Msg,
       From;
     false -> ok
+  end.
+
+clear_orderer(Id, S) ->
+  case dict:is_key(Id, S) of
+    true -> dict:erase(Id, S);
+    false -> S
   end.

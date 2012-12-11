@@ -32,6 +32,7 @@ handle_call(_Msg, S) -> {reply, ok, S}.
 
 handle_call({push, Order}, _, Queue) ->
   lager:info("queue push ~p", [Order]),
+  market_data:write_order(Order),
   Q2 = queue:in(Order, Queue),
   {reply, ok, Q2};
 

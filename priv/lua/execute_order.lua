@@ -1,4 +1,12 @@
 local order_id, contra_id = KEYS[1], KEYS[2]
+local exists = redis.call('EXISTS', 'order:'..order_id)
+if exists == '0' then
+  return {'cancelled', 'not found', order_id }
+end
+exists = redis.call('EXISTS', 'order:'..contra_id)
+if exists == '0' then
+  return {'cancelled', 'not found', contra_id }
+end
 
 local order = get_order(order_id)
 local contra = get_order(contra_id)

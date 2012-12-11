@@ -8,4 +8,3 @@ redis.call('HMSET', 'order:'..id, 'id', id,
   'quantity', quantity, 'quantity_constraint', qconst,
   'time_in_force', tif, 'timestamp', ts, 'state', state)
 redis.call('SADD', 'user:orders:'..user, id)
-

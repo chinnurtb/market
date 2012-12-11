@@ -12,7 +12,7 @@
 -export([get_bids/2, get_asks/2,
     get_order/1, write_order/1, book_order/1, cancel_order/2, close_order/1]).
 
--export([quote/1, execute/5, rollback/1]).
+-export([quote/1, quotes/0, execute/5, rollback/1]).
 
 get_bids(Book, Symbol) ->
   gen_server:call(?MODULE, {bid, Book, Symbol}).
@@ -37,6 +37,13 @@ close_order(Txn) ->
 
 quote(Symbol) ->
   gen_server:call(?MODULE, {quote, Symbol}).
+
+quotes() ->
+  Quotes = lists:map(fun(X) ->
+    gen_server:call(?MODULE, {quote, X})
+  end, ?SYMBOLS),
+  Ret = market_utils:zip_proplist(Quotes, ?SYMBOLS),
+  Ret.
 
 execute(Lock, Order, Contra, Price, Quantity) ->
   gen_server:call(?MODULE, {execute, Lock, Order, Contra, Price, Quantity}).
@@ -66,6 +73,7 @@ handle_call(_Msg, S) -> {reply, ok, S}.
 %% GET BOOKS
 handle_call({Side, Book, Symbol}, _, S) ->
   Orders = do_script(orders, [Side, Book, Symbol], [], S),
+  lager:info("ORDERS ~p", [Orders]),
   {reply, orders_reply(Orders), S};
 
 handle_call({order, Id}, _, S) ->
@@ -122,22 +130,29 @@ handle_cast({write, Order}, S) ->
   do_write_order(Order, S),
   {noreply, S};
 
-handle_cast({book, #marketOrder{id=Id, type=Side, symbol=Symbol, limit=Limit}}, S) ->
+handle_cast({book, #marketOrder{id=Id, type=Side, symbol=Symbol, limit=Limit} = Order}, S) ->
   Market = case Limit of
     none -> "market";
     _ -> "limit"
   end,
-  do_script(book, [Id, Symbol, Side, Market], [], S),
+  case do_script(book, [Id, Symbol, Side, Market], [], S) of
+    {<<"error">>, <<"not found">>} ->
+      do_write_order(Order, S),
+      gen_server:cast(?MODULE, {book, Order});
+    _ -> ok
+  end,
   {noreply, S};
 
 
-handle_cast({cancel, #marketOrder{id=Order}, Reason}, S) ->
-  do_script(cancel, [Order], [Reason], S),
+handle_cast({cancel, #marketOrder{id=Id}=Order, Reason}, S) ->
+  do_script(cancel, [Id], [Reason], S),
+  market_events:order_cancelled(Order),
   {noreply, S};
 
 handle_cast({close, Txn}, S) ->
   TxId = Txn#marketTxn.id,
-  do_script(close, [TxId], [], S),
+  Ts = market_utils:timestamp(),
+  do_script(close, [TxId], [Ts], S),
   {noreply, S};
   
 handle_cast(_Msg, S) -> {noreply, S}.

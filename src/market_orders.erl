@@ -37,7 +37,7 @@ handle_call({book, Order}, _, Book) ->
 
 
 handle_call({exists, #marketOrder{type=Type, symbol=Symbol} = Order}, _, Book) ->
-  Orders = dict:fetch(plural(Type), Book),
+  Orders = dict:fetch(market_utils:plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
   {reply, lists:member(Order, SymbolOrders), Book};
 
@@ -92,14 +92,14 @@ load_books(BookName) ->
 
 load_bids(BookName) ->
   F = fun(X) -> market_data:get_bids(BookName, X) end,
-  zip(lists:map(F, ?SYMBOLS), ?SYMBOLS).
+  market_utils:zip(lists:map(F, ?SYMBOLS), ?SYMBOLS).
 
 load_asks(BookName) ->
   F = fun(X) -> market_data:get_asks(BookName, X) end,
-  zip(lists:map(F, ?SYMBOLS), ?SYMBOLS).
+  market_utils:zip(lists:map(F, ?SYMBOLS), ?SYMBOLS).
 
 symbol_orders(Symbol, Type, Book) ->
-  Orders = dict:fetch(plural(Type), Book),
+  Orders = dict:fetch(market_utils:plural(Type), Book),
   dict:fetch(Symbol, Orders).
 
 validate_order(#marketOrder { user=User, symbol=Symbol,
@@ -116,7 +116,7 @@ user_orders_by_symbol(User, Symbol, Type, Book) ->
 
 save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
   lager:info("Booking Order: ~p", [Order]),
-  Orders = dict:fetch(plural(Type), Book),
+  Orders = dict:fetch(market_utils:plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
   SymbolOrders2 = lists:sort(fun(A, B) ->
     case A#marketOrder.limit of
@@ -134,19 +134,19 @@ save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
     end
   end, SymbolOrders ++ [Order]),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
-  Book2 = dict:store(plural(Type), Orders2, Book),
+  Book2 = dict:store(market_utils:plural(Type), Orders2, Book),
   market_data:book_order(Order),
   market_events:order_placed(Order),
   {saved, Book2}.
 
 delete_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->
-  Orders = dict:fetch(plural(Type), Book),
+  Orders = dict:fetch(market_utils:plural(Type), Book),
   SymbolOrders = dict:fetch(Symbol, Orders),
   SymbolOrders2 = lists:filter(fun(X) ->
     X#marketOrder.id /= Order#marketOrder.id
   end, SymbolOrders),
   Orders2 = dict:store(Symbol, SymbolOrders2, Orders),
-  Book2 = dict:store(plural(Type), Orders2, Book),
+  Book2 = dict:store(market_utils:plural(Type), Orders2, Book),
   Book2.
 
 cancel_order(Order, Reason, Book) ->
@@ -162,18 +162,3 @@ close_order(Order, Txn, Book) ->
   market_events:order_closed(Txn),
   {closed, Book2}.
 
-
-%% TAKES TWO LISTS
-%% A LIST OF ORDER LISTS
-%% [ [SymbolOrder...], ... ]
-%% AND A LIST OF SYMBOLS
-%% AND "ZIPS" THEM TOGETHER INTO A DICT
-zip(L, S) -> zip(L, S, dict:new()).
-zip(_, [], R) -> R;
-zip([], _, R) -> R;
-zip([O | OT], [S | ST], R) ->
-  zip(OT, ST, dict:store(S, O, R)).
-
-plural(ask) -> asks;
-plural(bid) -> bids;
-plural(T) -> T.

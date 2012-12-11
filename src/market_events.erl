@@ -1,7 +1,7 @@
 %% Handles bid, ask, close events on a market.
 -module(market_events).
 -export([start_link/0, subscribe/1, unsubscribe/1, order_placed/1,
-    order_closed/1, symbol_tick/3]).
+    order_closed/1, quotes/1, order_cancelled/1]).
 
 -define(SERVER, {local, ?MODULE}).
 -include("market_data.hrl").
@@ -23,5 +23,8 @@ order_placed(Order) ->
 order_closed(Txn) ->
   gen_event:notify(?MODULE, {closed, Txn}).
 
-symbol_tick(Symbol, New, Last) ->
-  gen_event:notify(?MODULE, {tick, Symbol, New, Last}).
+quotes(Quotes) ->
+  gen_event:notify(?MODULE, {quotes, Quotes}).
+
+order_cancelled(Order) ->
+  gen_event:notify(?MODULE, {cancelled, Order}).
