@@ -61,3 +61,11 @@ local day = math.floor(ts/(3600*24))*(3600*24)
 set_stats(buy.symbol, 'minute', price, quantity, minute)
 set_stats(buy.symbol, 'hour', price, quantity, hour)
 set_stats(buy.symbol, 'day', price, quantity, day)
+
+local txn = cmsgpack.pack({
+  buy=get_order(buy.id),
+  sell=get_order(sell.id),
+  price=price,
+  quantity=quantity
+})
+redis.call('PUBLISH', "txn", txn)

@@ -10,8 +10,7 @@
                   crypto,
                   appmon,
                   eredis,
-                  lager,
-                  erlzmq
+                  lager
                  ]},
   {mod, { market_app, []}},
   {env, [
@@ -23,8 +22,6 @@
     market_data_sup,
     market_event,
     market_events,
-    market_pub_proto,
-    market_pub,
     market_data,
     market_ticker,
     market_orders,

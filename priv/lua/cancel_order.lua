@@ -1,7 +1,7 @@
 local id = KEYS[1]
 local reason = ARGV[1]
 local ret = redis.call('HMGET', 'order:'..id, 'user', 'symbol', 'type', 'limit')
-if ret[1] == nil then return end
+if ret[1] == nil then return false end
 local market
 if ret[4] == 'none' then market = 'market' else market = 'limit' end
 redis.call('SREM', 'user:orders:'..ret[1], id)
@@ -13,3 +13,7 @@ redis.call('LTRIM', 'user:orders:'..ret[1]..':cancelled', 0, 999)
 for k,v in ipairs(expired) do
   redis.call('DEL', 'order:'..v)
 end
+
+local order = cmsgpack.pack(get_order(id))
+redis.call('PUBLISH', "cancel", order)
+return true

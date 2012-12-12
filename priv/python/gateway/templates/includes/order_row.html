@@ -1,0 +1,8 @@
+<tr id="{{order.id}}">
+  <td class="right">{{order.quantity}}</td>
+  <td class="right">
+    {% if order.limit == "none" %}0{% else %}{{order.limit}}{% endif %}
+  </td>
+  <td>{{order.quantity_constraint}}</td>
+  <td>{{order.time_in_force}}</td>
+</tr>

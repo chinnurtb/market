@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Market</h1>
+<section id="cocaine">
+  <h2>Cocaine</h2>
+  <table>
+    {{cocaine}}
+    <tr><td>Price:</td><td>{{cocaine.price}}</td></tr>
+    <tr><td>Last Volume:</td><td>{{cocaine.volume}}</td></tr>
+    <tr><td>Oustanding:</td><td>{{cocaine.outstanding}}</td></tr>
+    <tr><td>High:</td><td>{{cocaine.bid_high}}</td></tr>
+    <tr><td>Low:</td><td>{{cocaine.ask_low}}</td></tr>
+  <table>
+    <thead>
+      <tr><th>Bids</th><th>Asks</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><table>
+        <thead>
+          <tr class="small">
+            <th>Quantity</th>
+            <th>Limit</th>
+            <th>Constraint</th>
+            <th>TIF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in cocaine.bids %}
+            {% include "includes/order_row.html" %}
+          {% endfor %}
+        </tbody>
+        </table></td>
+        <td><table>
+        <thead>
+          <tr class="small">
+            <th>Quantity</th>
+            <th>Limit</th>
+            <th>Constraint</th>
+            <th>TIF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in cocaine.asks %}
+            {% include "includes/order_row.html" %}
+          {% endfor %}
+        </tbody>
+      </table></td>
+    </tr>
+    </tbody>
+  </table>
+</section>
+{% endblock %}

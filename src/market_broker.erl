@@ -268,18 +268,34 @@ trade_quantity(B, S) ->
 
 trade_price(#marketOrder{symbol=Symbol, limit=BL},
   #marketOrder{limit=SL}) ->
-  case BL of
-    none ->
-      case SL of
-        none -> market_data:quote(Symbol);
-        _ -> SL
-      end;
-    _ ->
-      case SL of
-        none -> market_data:quote(Symbol);
-        _ -> BL
-      end
+  BL2 = case BL of
+    none -> 0;
+    _ -> BL
+  end,
+  SL2 = case SL of
+    none -> 0;
+    _ -> SL
+  end,
+  P = case BL2 >= SL2 of
+    true -> BL2;
+    false -> SL2
+  end,
+  case P of
+    0 -> market_data:quote(Symbol);
+    _ -> P
   end.
+  %case BL of
+  %  none ->
+  %    case SL of
+  %      none -> market_data:quote(Symbol);
+  %      _ -> SL
+  %    end;
+  %  _ ->
+  %    case SL of
+  %      none -> market_data:quote(Symbol);
+  %      _ -> BL
+  %    end
+  %end.
 
 notify_orderer(Id, Msg, S) ->
   case dict:is_key(Id, S) of

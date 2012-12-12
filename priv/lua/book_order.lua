@@ -6,4 +6,7 @@ if exists == 0 then
 end
 redis.call('SADD', 'book:'..side..':'..market..':'..symbol, id)
 redis.call('HSET', 'order:'..id, 'state', 'booked')
+
+local order = cmsgpack.pack(get_order(id))
+redis.call('PUBLISH', "book", order)
 return true
