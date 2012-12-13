@@ -1,0 +1,50 @@
+<section id="{{books[symbol].name}}">
+  <h2>{{books[symbol].name}}</h2>
+  <table class="stats">
+    <tr><td>Price:</td><td>{{books[symbol].price}}</td></tr>
+    <tr><td>Last Volume:</td><td>{{books[symbol].volume}}</td></tr>
+    <tr><td>Oustanding:</td><td>{{books[symbol].outstanding}}</td></tr>
+    <tr><td>High:</td><td>{{books[symbol].bid_high}}</td></tr>
+    <tr><td>Low:</td><td>{{books[symbol].ask_low}}</td></tr>
+  </table>
+  <table>
+    <thead>
+      <tr><th>Bids</th><th>Asks</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><table>
+        <thead>
+          <tr class="small">
+            <th>Quantity</th>
+            <th>Limit</th>
+            <th>Constraint</th>
+            <th>TIF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in books[symbol].bids %}
+            {% include "includes/order_row.html" %}
+          {% endfor %}
+        </tbody>
+        </table></td>
+        <td><table>
+        <thead>
+          <tr class="small">
+            <th>Quantity</th>
+            <th>Limit</th>
+            <th>Constraint</th>
+            <th>TIF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in books[symbol].asks %}
+            {% include "includes/order_row.html" %}
+          {% endfor %}
+        </tbody>
+      </table></td>
+    </tr>
+    </tbody>
+  </table>
+</section>
+

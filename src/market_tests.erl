@@ -1,21 +1,19 @@
 -module(market_tests).
 
--export([test/0]).
+-export([test/0, test_forever/0, test_random/0]).
 
--define(SYMBOLS, ["cocaine", "pot", "speed"]).
-
+-include("market_data.hrl").
 
 setup() ->
   {ok, Redis} = eredis:start_link(),
   gen_server:cast(market_orders, reload),
   gen_server:cast(limit_orders, reload),
-  eredis:q(Redis, ["HSET", "user:1", "cash", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:2", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:3", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:4", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:5", "cocaine", "10000000"]),
-  eredis:q(Redis, ["HSET", "user:6", "cocaine", "10000000"]).
-
+  eredis:q(Redis, ["HSET", "user:1", "cash", "10000000000"]),
+  eredis:q(Redis, ["HSET", "user:2", "cocaine", "100000000000"]),
+  eredis:q(Redis, ["HSET", "user:3", "cocaine", "100000000000"]),
+  eredis:q(Redis, ["HSET", "user:4", "cocaine", "100000000000"]),
+  eredis:q(Redis, ["HSET", "user:5", "cocaine", "100000000000"]),
+  eredis:q(Redis, ["HSET", "user:6", "cocaine", "100000000000"]).
 
 test() ->
   setup(),
@@ -23,6 +21,27 @@ test() ->
   test_complex_fill(),
   test_partial_fill(),
   test_limit_fill().
+
+test_forever() ->
+  [ erlang:spawn(?MODULE, test_random, []) || _ <- lists:seq(1, 20000) ].
+
+test_random() ->
+  random:seed(erlang:now()),
+  User = random:uniform(6),
+  Symbol = lists:nth(random:uniform(10), ?SYMBOLS),
+  Q = random:uniform(10000),
+  L = random:uniform(1000) - 1,
+  L2 = case L of
+    0 -> none;
+    _ -> L
+  end,
+  case random:uniform(2) of
+    1 ->
+      market_broker:buy(User, Symbol, L2, Q, none, cancelled);
+    _ ->
+      market_broker:sell(User, Symbol, L2, Q, none, cancelled)
+  end,
+  erlang:spawn(?MODULE, test_random, []).
 
 test_simple_fill() ->
   market_broker:buy(1, cocaine, none, 100, none, cancelled),

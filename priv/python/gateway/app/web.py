@@ -8,10 +8,17 @@ static = Bottle()
 
 from books import get as get_books
 from quotes import get as get_quotes
+import constants
 
 @static.route('/')
 def index():
-  return template('index.html', prepare_books(get_books()))
+  books = prepare_books(get_books())
+  symbols = constants.SYMBOLS
+  c = {
+      'books':books,
+      'symbols':symbols
+  }
+  return template('index.html', c)
 
 # Static Routes
 @static.get('/<filename:re:.*\.js>')
@@ -30,10 +37,16 @@ def prepare_books(books):
   ret = {}
   for symbol in books:
     bids = books[symbol]['market']['bid']
-    bids.append(books[symbol]['limit']['bid'])
+    bids.extend(books[symbol]['limit']['bid'])
+    def sort(o):
+      if o['limit'] == 'none': return 0
+      return int(o['limit'])
+    bids.sort(key=sort, reverse=True)
     ret[symbol] = get_quotes(symbol)
+    ret[symbol]['name'] = symbol
     ret[symbol]['bids'] = bids
     asks = books[symbol]['market']['ask']
-    asks.append(books[symbol]['limit']['ask'])
+    asks.extend(books[symbol]['limit']['ask'])
+    asks.sort(key=sort)
     ret[symbol]['asks'] = asks
   return ret

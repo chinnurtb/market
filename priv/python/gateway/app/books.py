@@ -51,7 +51,6 @@ def txn_listener():
 
 def run():
   load()
-  print books
   procs = [
     gevent.spawn(book_listener),
     gevent.spawn(cancel_listener),
@@ -73,6 +72,3 @@ def remove_order(order):
   l =  books[symbol][market][type]
   l[:] = [o for o in l if o['id'] == order['id']]
   books[symbol][market][type] = l
-
-if __name__ == "__main__":
-  run()

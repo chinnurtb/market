@@ -10,9 +10,13 @@ start_link() ->
 
 init([]) ->
     {ok, { {one_for_one, 10, 60}, [
-      ?MAKER(1)
-      %?MAKER(2),
-      %?MAKER(3),
-      %?MAKER(4)
+      ?MAKER(1),
+      ?MAKER(2),
+      ?MAKER(3),
+      ?MAKER(4),
+      ?MAKER(5),
+      ?MAKER(6),
+      ?MAKER(7),
+      ?MAKER(8)
     ]} }.
 

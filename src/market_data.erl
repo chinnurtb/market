@@ -60,7 +60,9 @@ start_link() ->
 init([]) ->
   process_flag(trap_exit, true),
   {ok, Procs} = file:consult("redis.lua.erl"),
-  {ok, Redis} = eredis:start_link(),
+  {ok, Host} = application:get_env(market, redis_host),
+  {ok, Port} = application:get_env(market, redis_port),
+  {ok, Redis} = eredis:start_link(Host, Port),
   Hashes = load_scripts(Procs, Redis),
   {ok, #state{procs=Procs, hashes=Hashes, redis=Redis}}.
 
