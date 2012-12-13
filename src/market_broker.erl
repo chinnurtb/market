@@ -7,7 +7,7 @@
     terminate/2, code_change/3]).
 
 %% PUBLIC API
--export([buy/6, sell/6, cancel/1]).
+-export([buy/1, buy/6, sell/1, sell/6, cancel/1]).
 %% "PROTECTED" LEVEL2 DATA!!
 -export([
     bids/1, asks/1,
@@ -16,6 +16,8 @@
     book_order/1,
     refresh_books/0
 ]).
+buy({User, Symbol, Limit, Quantity, QConst, Tif}) ->
+  buy(User, Symbol, Limit, Quantity, QConst, Tif).
 
 buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
  gen_server:call(?MODULE, {order, #marketOrder {
@@ -31,6 +33,9 @@ buy(User, Symbol, Limit, Quantity, QConst, Tif) ->
     state=new,
     retries=0
   }}).
+
+sell({User, Symbol, Limit, Quantity, QConst, Tif}) ->
+  sell(User, Symbol, Limit, Quantity, QConst, Tif).
 
 sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
   gen_server:call(?MODULE, {order, #marketOrder {
@@ -97,17 +102,18 @@ handle_event(_Event, S) -> {ok, S}.
 handle_call(_Msg, S) -> {reply, ok, S}.
 
 handle_call({order, Order}, From, S) ->
-  S2 = case Order#marketOrder.retries > 10 of
+  case Order#marketOrder.retries > 10 of
     true ->
       lager:error("TOO MANY RETRIES ~p", [Order]),
-      dict:erase(Order#marketOrder.id, S);
+      S2 = dict:erase(Order#marketOrder.id, S),
+      {reply, {cancelled, "TOO MANY RETRIES"}, S2};
     false ->
       Retries = Order#marketOrder.retries,
       Order2 = Order#marketOrder{retries=Retries+1},
       market_order_queue:push(Order2),
-      dict:store(Order#marketOrder.id, From, S)
-  end,
-  {reply, {queued, Order#marketOrder.id}, S2};
+      S2 = dict:store(Order#marketOrder.id, From, S),
+      {reply, {queued, Order#marketOrder.id}, S2}
+  end;
 
 handle_call(_Msg, _, S) -> {reply, ok, S}.
 
@@ -115,6 +121,7 @@ handle_cast({execute, Order, Group}, S) ->
   Id = Order#marketOrder.id,
   notify_orderer(Id, {executing, Order, Group}, S),
   Ret = execute_group(Order, Group),
+  lager:info("EXECUTE GROUP RET: ~p", [Ret]),
   notify_orderer(Id, Ret, S),
   S2 = clear_orderer(Id, S),
   {noreply, S2};
@@ -192,7 +199,8 @@ execute_group(Order, {QuantityFilled, Group}) ->
           market_order_queue:push(O2)
       end;
     _ -> true
-  end.
+  end,
+  Ret.
 
 execute_group_member(_, O, [], _, R) -> {closed, O, R};
 execute_group_member(Lock, O, [ H | T ], Q, R) ->

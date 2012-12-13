@@ -250,29 +250,4 @@ order_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts, State ])
     state=val(State)
   }.
 
-val(A) ->
-  S = btl(A),
-  Ret = case string:to_integer(S) of
-    {Int, []} -> Int;
-    _ -> S
-  end,
-  case Ret of
-    "none" -> none;
-    "all" -> all;
-    "cancelled" -> cancelled;
-    "bid" -> bid;
-    "ask" -> ask;
-    "day" -> day;
-    "immediate" -> immediate;
-    "fill" -> fill;
-    "closed" -> closed;
-    "new" -> new;
-    "booked" -> booked;
-    "locked" -> locked;
-    _ -> Ret
-  end.
-
-btl(B) when is_binary(B) -> binary_to_list(B);
-btl(B) when is_list(B) -> B;
-btl(B) when is_integer(B) -> integer_to_list(B);
-btl(B) -> lager:error("WEIRD TYPE ~p", [B]), B.
+val(A) -> market_utils:val(A).
