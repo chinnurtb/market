@@ -35,7 +35,10 @@ do_sell(Params, Req, State) ->
   {queued, _OrderId} = market_broker:sell(order_params(Params)),
   wait_on_response(Req, State).
 
-do_cancel(Params, Req, State) -> ok.
+do_cancel(Params, Req, State) ->
+  OrderId = val(proplists:get_value(<<"id">>, Params)),
+  market_broker:cancel(OrderId),
+  wait_on_response(Req, State).
 
 order_params(Post) ->
   User = val(proplists:get_value(<<"user">>, Post)),
