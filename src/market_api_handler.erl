@@ -9,8 +9,8 @@ init({tcp, http}, Req, _Opts) ->
 handle(Req, State) ->
   case cowboy_req:method(Req) of
     {<<"POST">>, _} ->
-      {ok, Post, _} = cowboy_req:body_qs(Req),
-      R = cowboy_req:chunked_reply(200, [], Req),
+      {ok, Post, Req2} = cowboy_req:body_qs(Req),
+      R = cowboy_req:chunked_reply(200, [], Req2),
       case get_method(Post) of
         <<"buy">> -> do_buy(Post, R, State);
         <<"sell">> -> do_sell(Post, R, State);
@@ -49,18 +49,20 @@ order_params(Post) ->
 wait_on_response(Req, State) ->
   receive
     {cancelled, _O, R} ->
-      cowboy_req:chunk(["cancelled:",R], Req),
+      cowboy_req:chunk([<<"cancelled:">>, R], Req),
       {ok, Req, State};
     {error, _O, R} ->
-      cowboy_req:chunk(["error:",R], Req),
+      cowboy_req:chunk([<<"error:">>, R], Req),
       {ok, Req, State};
     {booked, #marketOrder{id=Id}} ->
-      cowboy_req:chunk(["booked:",Id], Req),
+      cowboy_req:chunk([<<"booked:">>, Id], Req),
       {ok, Req, State};
     {closed, O, Txns} ->
       lists:foreach(fun({_, X}) ->
         #marketTxn{price=P, quantity=Q} = X,
-        cowboy_req:chunk([<<"closed:">>, P, <<":">>, Q], Req)
+        Msg = [<<"closed:">>, P, <<":">>, Q],
+        lager:info("RESPONSE: ~p", [Msg]),
+        cowboy_req:chunk(Msg, Req)
       end, Txns),
       {ok, Req, State};
     shutdown ->
