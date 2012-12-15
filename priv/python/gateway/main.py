@@ -8,7 +8,7 @@ from bottle import run
 
 
 def run_http():
-  run(static, debug=True, reloader=True, port=8080)
+  run(static, debug=False, port=8080, host='0.0.0.0')
 
 if __name__ == "__main__":
   http = gevent.spawn(run_http)

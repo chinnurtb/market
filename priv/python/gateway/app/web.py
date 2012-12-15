@@ -8,6 +8,9 @@ static = Bottle()
 
 from books import get as get_books
 from quotes import get as get_quotes
+from auth import auth
+from db import get_inventory
+
 import constants
 
 @static.route('/')
@@ -19,6 +22,12 @@ def index():
       'symbols':symbols
   }
   return template('index.html', c)
+
+@static.route('/inventory/', method="POST")
+@auth
+def inventory():
+  key = request.forms.get('key')
+  return get_inventory(key)
 
 # Static Routes
 @static.get('/<filename:re:.*\.js>')

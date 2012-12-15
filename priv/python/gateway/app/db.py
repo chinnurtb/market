@@ -34,3 +34,22 @@ def get_symbol_data(symbol):
   r = redis.StrictRedis(connection_pool=pool)
   ret = scripts["symbol_data"](keys=[symbol], args=[])
   return utils.zip_symbol_data(ret)
+
+def get_secret(key):
+  r = redis.StrictRedis(connection_pool=pool)
+  return r.hget('user:%s' % key, 'secret')
+
+def is_dark(key):
+  r = redis.StrictRedis(conection_pool=pool)
+  return r.hget('user:%s' % key, 'dark') == '1'
+
+def get_inventory(key):
+  r = redis.StrictRedis(connection_pool=pool)
+  user = r.hgetall('user:%s' % key)
+  if user:
+    try:
+      del user['key']
+      del user['secret']
+      del user['dark']
+    except: pass
+  return user

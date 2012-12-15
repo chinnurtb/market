@@ -1,7 +1,9 @@
+*.beam
+*.pyc
+*.Python
 deps/
 rel/market/
 ebin/
-*.beam
 data/*.rdb
 data/*.aof
 data/*.log
