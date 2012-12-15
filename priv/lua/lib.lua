@@ -18,3 +18,21 @@ local get_order = function(id)
     state=o[9]
   }
 end
+
+local ensure_darkpool = function(user, prop, min)
+  local r = redis.call('HMGET', 'user:'..user, prop, 'dark')
+  local v = tonumber(r[1])
+  local diff = min - v
+  if r[2] == '1' then
+    --DARK POOL USER
+    if diff > 0 then
+      if prop == 'cash' then
+        redis.call('HINCRBY', 'user:'..key, 'cash', diff)
+        redis.call('INCRBY', 'cash_outstanding', diff)
+      else
+        redis.call('HINCRBY', 'user:'..key, prop, diff)
+        redis.call('HINCRBY', prop, 'outstanding', diff)
+      end
+    end
+  end
+end

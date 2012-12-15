@@ -37,4 +37,5 @@ if __name__ == "__main__":
   r = redis.StrictRedis()
   r.hmset('user:{0}'.format(user['key']), user)
   r.sadd('users', user['key'])
+  r.incrby('cash_outstanding', by=10000)
   print user

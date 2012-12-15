@@ -40,7 +40,7 @@ def get_secret(key):
   return r.hget('user:%s' % key, 'secret')
 
 def is_dark(key):
-  r = redis.StrictRedis(conection_pool=pool)
+  r = redis.StrictRedis(connection_pool=pool)
   return r.hget('user:%s' % key, 'dark') == '1'
 
 def get_inventory(key):
@@ -53,3 +53,9 @@ def get_inventory(key):
       del user['dark']
     except: pass
   return user
+
+def get_user_orders(key):
+  r = redis.StrictRedis(connection_pool=pool)
+  ret = scripts["user_orders"](keys=[key], args=[])
+  print ret
+  return {'inventory':ret}

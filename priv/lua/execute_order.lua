@@ -24,14 +24,17 @@ end
 
 local tx_cost = price * quantity
 
+--MAKE SURE OUR INTERNAL BOTS
+--CAN ALWAYS CLOSE, AND OUTSTANDING
+--STAYS TRUE
+ensure_darkpool(buy.user, 'cash', tx_cost)
+ensure_darkpool(sell.user, buy.symbol, quantity)
+
 local cash = tonumber(redis.call('HGET', 'user:'..buy.user, 'cash')) or 0
 local holdings = tonumber(redis.call('HGET', 'user:'..sell.user, buy.symbol)) or 0
 
 local buy_lock = redis.call('HGET', 'order:'..buy.id, 'lock') or nil
 local sell_lock = redis.call('HGET', 'order:'..sell.id, 'lock') or nil
-log(buy_lock)
-log(sell_lock)
-log(lock)
 
 if buy_lock ~= nil and buy_lock ~= lock then
   return {'cancelled', 'locked', buy.id}

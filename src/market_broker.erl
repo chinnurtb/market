@@ -52,7 +52,9 @@ sell(User, Symbol, Limit, Quantity, QConst, Tif) ->
     retries=0
   }}).
 
-cancel(OrderId) -> cancel_order(OrderId, "Cancelled By User").
+cancel(OrderId) ->
+  cancel_order(OrderId, "Cancelled By User"),
+  self() ! {cancelled, OrderId, "Cancelled By User"}.
 
 bids(Symbol) ->
   market_bids(Symbol) ++ limit_bids(Symbol).

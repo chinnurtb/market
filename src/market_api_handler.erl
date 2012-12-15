@@ -45,25 +45,25 @@ order_params(Post) ->
   Symbol = list_to_atom(val(proplists:get_value(<<"symbol">>, Post))),
   Limit = val(proplists:get_value(<<"limit">>, Post)),
   Quantity = val(proplists:get_value(<<"quantity">>, Post)),
-  QConst = val(proplists:get_value(<<"qconst">>, Post)),
-  Tif = val(proplists:get_value(<<"tif">>, Post)),
+  QConst = val(proplists:get_value(<<"quantity_constraint">>, Post)),
+  Tif = val(proplists:get_value(<<"time_in_force">>, Post)),
   {User, Symbol, Limit, Quantity, QConst, Tif}.
 
 wait_on_response(Req, State) ->
   receive
     {cancelled, _O, R} ->
-      cowboy_req:chunk(list_to_binary([<<"{result:'cancelled',reason:'">>, R, <<"'}\n\n">>]), Req),
+      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"cancelled\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
       {ok, Req, State};
-    {error, _O, R} ->
-      cowboy_req:chunk(list_to_binary([<<"{result:'error',reason:'">>, R, <<"'}\n\n">>]), Req),
+    {error, _O, {_, R}} ->
+      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"error\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
       {ok, Req, State};
     {booked, #marketOrder{id=Id}} ->
-      cowboy_req:chunk(list_to_binary([<<"{result:'booked',id:'">>, Id, <<"'}\n\n">>]), Req),
+      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"booked\",\"id\":\"">>, Id, <<"\"}\n\n">>]), Req),
       {ok, Req, State};
     {closed, _O, Txns} ->
       lists:foreach(fun({_, X}) ->
         #marketTxn{price=P, quantity=Q} = X,
-        Msg = list_to_binary(["{result:'closed',price:", integer_to_list(P), ",quantity:", integer_to_list(Q), "}\n\n"]),
+        Msg = list_to_binary(["{\"result\":\"closed\",\"price\":", integer_to_list(P), ",\"quantity\":", integer_to_list(Q), "}\n\n"]),
         cowboy_req:chunk(Msg, Req)
       end, Txns),
       {ok, Req, State};
@@ -72,7 +72,7 @@ wait_on_response(Req, State) ->
     _Msg ->
       wait_on_response(Req, State)
     after 60000 ->
-      cowboy_req:chunk(list_to_binary([<<"{result:'timeout''}\n\n">>]), Req),
+      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"timeout\"}\n\n">>]), Req),
       {ok, Req, State}
     end.
 
