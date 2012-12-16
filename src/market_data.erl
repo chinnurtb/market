@@ -10,7 +10,7 @@
 
 %% PUBLIC API
 -export([get_bids/2, get_asks/2,
-    get_order/1, write_order/1, book_order/1, cancel_order/2, close_order/1]).
+    get_order/1, write_order/1, book_order/1, delete_order/1, cancel_order/2, close_order/1]).
 
 -export([quote/1, quotes/0, execute/5, rollback/1]).
 
@@ -31,6 +31,9 @@ book_order(Order) ->
 
 cancel_order(OrderId, Reason) ->
   gen_server:cast(?MODULE, {cancel, OrderId, Reason}).
+
+delete_order(OrderId) ->
+  gen_server:cast(?MODULE, {delete, OrderId}).
 
 close_order(Txn) ->
   gen_server:cast(?MODULE, {close, Txn}).
@@ -149,6 +152,11 @@ handle_cast({book, #marketOrder{id=Id, type=Side, symbol=Symbol, limit=Limit} = 
 handle_cast({cancel, #marketOrder{id=Id}=Order, Reason}, S) ->
   do_script(cancel, [Id], [Reason], S),
   market_events:order_cancelled(Order),
+  {noreply, S};
+
+handle_cast({delete, Id}, S) ->
+  lager:info("UH HUH"),
+  do_script(delete, [Id], [], S),
   {noreply, S};
 
 handle_cast({close, Txn}, S) ->

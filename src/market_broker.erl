@@ -74,15 +74,22 @@ limit_asks(Symbol) ->
   gen_server:call(limit_orders, {Symbol, asks}).
 
 book_order(Order) ->
-  lager:debug("book_order"),
   Order2 = Order#marketOrder {
     state=booked
   },
-  case Order#marketOrder.limit of
+  Ret = case Order#marketOrder.limit of
     none ->
       gen_server:call(market_orders, {book, Order2});
     _ ->
       gen_server:call(limit_orders, {book, Order2})
+  end,
+  lager:info("BOOK: ~p", [Ret]),
+  case Ret of
+    {error, {rejected, _}} ->
+      lager:info("YES"),
+      market_data:delete_order(Order#marketOrder.id),
+      Ret;
+    Ret -> Ret
   end.
 
 refresh_books() ->
