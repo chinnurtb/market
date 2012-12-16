@@ -49,48 +49,48 @@ start_link() ->
 
 init([]) ->
   process_flag(trap_exit, true),
-  erlang:send_after(10, self(), pop),
+  erlang:send_after(30, self(), pop),
   S = dict:new(),
   {ok, S}.
 
 handle_event(_Event, S) -> {ok, S}.
 
 handle_info(pop, S) ->
-  erlang:send_after(20, self(), pop),
-  {noreply, pop(S)};
+  erlang:send_after(100, self(), pop),
+  {noreply, pop(S), hibernate};
 
 handle_info({'DOWN', Ref, process, _, {execute, Order, Group}}, S) ->
   {Order, S2} = clear_ref(Ref, S),
   gen_server:cast(market_broker, {execute, Order, Group}),
-  {noreply, S2};
+  {noreply, S2, hibernate};
 
 handle_info({'DOWN', Ref, process, _, {cancel, Order, Reason}}, S) ->
   {Order, S2} = clear_ref(Ref, S),
   gen_server:cast(market_broker, {cancel, Order, Reason}),
-  {noreply, S2};
+  {noreply, S2, hibernate};
 
 handle_info({'DOWN', Ref, process, _, {book, Order}}, S) ->
   {Order, S2} = clear_ref(Ref, S),
   gen_server:cast(market_broker, {book, Order}),
-  {noreply, S2};
+  {noreply, S2, hibernate};
 
 handle_info({'DOWN', Ref, process, _, normal}, S) ->
   {_, S2} = clear_ref(Ref, S),
-  {noreply, S2};
+  {noreply, S2, hibernate};
 
 handle_info({'DOWN', Ref, process, _, Reason}, S) ->
   lager:info("DOWN REASON ~p", [Reason]),
   {Order, S2} = clear_ref(Ref, S),
   market_order_queue:push(Order),
-  {noreply, S2};
+  {noreply, S2, hibernate};
 
-handle_info(Msg, S) -> lager:info("INFO: ~p", [Msg]), {noreply, S}.
+handle_info(Msg, S) -> lager:info("INFO: ~p", [Msg]), {noreply, S, hibernate}.
 
-handle_call(_Msg, S) -> {reply, ok, S}.
+handle_call(_Msg, S) -> {reply, ok, S, hibernate}.
 
-handle_call(_Msg, _, S) -> {reply, ok, S}.
+handle_call(_Msg, _, S) -> {reply, ok, S, hibernate}.
 
-handle_cast(_Msg, S) -> {noreply, S}.
+handle_cast(_Msg, S) -> {noreply, S, hibernate}.
 
 terminate(Reason, _) ->
   lager:info("~p terminating due to ~p", [?MODULE, Reason]),
