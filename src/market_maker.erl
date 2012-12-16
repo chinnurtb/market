@@ -56,8 +56,9 @@ init([]) ->
 handle_event(_Event, S) -> {ok, S}.
 
 handle_info(pop, S) ->
-  erlang:send_after(100, self(), pop),
-  {noreply, pop(S), hibernate};
+  Ret = flush(pop(S)),
+  {noreply, Ret, hibernate};
+
 
 handle_info({'DOWN', Ref, process, _, {execute, Order, Group}}, S) ->
   {Order, S2} = clear_ref(Ref, S),
@@ -100,11 +101,18 @@ code_change(_, _, S) -> {ok, S}.
 
 pop(S) ->
   case market_order_queue:pop() of
-    empty -> S;
+    empty -> {empty, S};
     Order ->
       {_, Ref} = spawn_monitor(?MODULE, match_order, [Order]),
-      dict:store(Ref, Order, S)
+      S2 = dict:store(Ref, Order, S),
+      {popped, S2}
   end.
+
+flush({empty, S}) ->
+  erlang:send_after(300, self(), pop),
+  S;
+flush({popped, S}) ->
+  flush(pop(S)).
 
 accumulate_quantity(O, C) ->
   accumulate_quantity(O, C, [], 0).

@@ -155,7 +155,6 @@ handle_cast({cancel, #marketOrder{id=Id}=Order, Reason}, S) ->
   {noreply, S};
 
 handle_cast({delete, Id}, S) ->
-  lager:info("UH HUH"),
   do_script(delete, [Id], [], S),
   {noreply, S};
 

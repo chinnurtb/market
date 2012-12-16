@@ -111,7 +111,7 @@ validate_order(#marketOrder { user=User, symbol=Symbol,
 
 user_orders_by_symbol(User, Symbol, Type, Book) ->
   lists:filter(fun(X) ->
-    User == X#marketOrder.user
+    User =:= X#marketOrder.user
   end, symbol_orders(Symbol, Type, Book)).
 
 save_order(#marketOrder{symbol=Symbol, type=Type} = Order, Book) ->

@@ -86,7 +86,6 @@ book_order(Order) ->
   lager:info("BOOK: ~p", [Ret]),
   case Ret of
     {error, {rejected, _}} ->
-      lager:info("YES"),
       market_data:delete_order(Order#marketOrder.id),
       Ret;
     Ret -> Ret
