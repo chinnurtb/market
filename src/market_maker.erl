@@ -1,118 +1,33 @@
 -module(market_maker).
--behaviour(gen_server).
 -include("market_data.hrl").
 
--export([start_link/0, init/1]).
--export([handle_event/2, handle_info/2, handle_call/2, handle_call/3, handle_cast/2,
-    terminate/2, code_change/3]).
-
 %% PUBLIC API
--export([match_order/1]).
+-export([match_order/2]).
 
-match_order(Order) ->
-  lager:info("MATCHING: ~p~n~n", [Order]),
-  Symbol = Order#marketOrder.symbol,
+match_order(Order, Contras) ->
+  lager:debug("MATCHING: ~p~n~n", [Order]),
   Tif = Order#marketOrder.time_in_force,
-  Contras = case Order#marketOrder.type of
-    bid ->
-      market_broker:asks(Symbol);
-    ask ->
-      market_broker:bids(Symbol)
-  end,
   Group = accumulate_quantity(Order, Contras),
   Ret = case Group of
     {0, []} ->
       case Tif of
-        immediate -> {cancel, Order, immediate};
-        fill -> {cancel, Order, fill};
-        _ ->
-          {book, Order}
+        immediate -> {cancel, immediate};
+        fill -> {cancel, fill};
+        _ -> book
       end;
     {Q, _} -> 
       case Q < Order#marketOrder.quantity of
         true ->
           case Tif of
-            fill -> {cancel, Order, fill};
+            fill -> {cancel, fill};
             _ ->
-              {execute, Order, Group}
+              {execute, Group}
           end;
-        _ -> {execute, Order, Group}
+        _ -> {execute, Group}
       end
   end,
-  lager:info("RET: ~p~n", [Ret]),
-  exit(Ret).
-
-%% GEN_SERVER CALLBACKS
-
-start_link() ->
-  gen_server:start_link(?MODULE, [], []).
-
-init([]) ->
-  process_flag(trap_exit, true),
-  erlang:send_after(30, self(), pop),
-  S = dict:new(),
-  {ok, S}.
-
-handle_event(_Event, S) -> {ok, S}.
-
-handle_info(pop, S) ->
-  Ret = flush(pop(S)),
-  {noreply, Ret, hibernate};
-
-
-handle_info({'DOWN', Ref, process, _, {execute, Order, Group}}, S) ->
-  {Order, S2} = clear_ref(Ref, S),
-  gen_server:cast(market_broker, {execute, Order, Group}),
-  {noreply, S2, hibernate};
-
-handle_info({'DOWN', Ref, process, _, {cancel, Order, Reason}}, S) ->
-  {Order, S2} = clear_ref(Ref, S),
-  gen_server:cast(market_broker, {cancel, Order, Reason}),
-  {noreply, S2, hibernate};
-
-handle_info({'DOWN', Ref, process, _, {book, Order}}, S) ->
-  {Order, S2} = clear_ref(Ref, S),
-  gen_server:cast(market_broker, {book, Order}),
-  {noreply, S2, hibernate};
-
-handle_info({'DOWN', Ref, process, _, normal}, S) ->
-  {_, S2} = clear_ref(Ref, S),
-  {noreply, S2, hibernate};
-
-handle_info({'DOWN', Ref, process, _, Reason}, S) ->
-  lager:info("DOWN REASON ~p", [Reason]),
-  {Order, S2} = clear_ref(Ref, S),
-  market_order_queue:push(Order),
-  {noreply, S2, hibernate};
-
-handle_info(Msg, S) -> lager:info("INFO: ~p", [Msg]), {noreply, S, hibernate}.
-
-handle_call(_Msg, S) -> {reply, ok, S, hibernate}.
-
-handle_call(_Msg, _, S) -> {reply, ok, S, hibernate}.
-
-handle_cast(_Msg, S) -> {noreply, S, hibernate}.
-
-terminate(Reason, _) ->
-  lager:info("~p terminating due to ~p", [?MODULE, Reason]),
-  ok.
-
-code_change(_, _, S) -> {ok, S}.
-
-pop(S) ->
-  case market_order_queue:pop() of
-    empty -> {empty, S};
-    Order ->
-      {_, Ref} = spawn_monitor(?MODULE, match_order, [Order]),
-      S2 = dict:store(Ref, Order, S),
-      {popped, S2}
-  end.
-
-flush({empty, S}) ->
-  erlang:send_after(300, self(), pop),
-  S;
-flush({popped, S}) ->
-  flush(pop(S)).
+  lager:debug("MATCH RESULT: ~p", [Ret]),
+  Ret.
 
 accumulate_quantity(O, C) ->
   accumulate_quantity(O, C, [], 0).
@@ -141,9 +56,3 @@ quantity_compatible(Quantity, Contra) ->
     all -> Quantity >= Contra#marketOrder.quantity_constraint;
     _ -> true
   end.
-
-clear_ref(Ref, S) ->
-  Order = dict:fetch(Ref, S),
-  S2 = dict:erase(Ref, S),
-  {Order, S2}.
-  

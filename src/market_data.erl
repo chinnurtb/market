@@ -9,34 +9,7 @@
 -include("market_data.hrl").
 
 %% PUBLIC API
--export([get_bids/2, get_asks/2,
-    get_order/1, write_order/1, book_order/1, delete_order/1, cancel_order/2, close_order/1]).
-
--export([quote/1, quotes/0, execute/5, rollback/1]).
-
-get_bids(Book, Symbol) ->
-  gen_server:call(?MODULE, {bid, Book, Symbol}).
-
-get_asks(Book, Symbol) ->
-  gen_server:call(?MODULE, {ask, Book, Symbol}).
-
-get_order(OrderId) ->
-  gen_server:call(?MODULE, {order, OrderId}).
-
-write_order(Order) ->
-  gen_server:cast(?MODULE, {write, Order}).
-
-book_order(Order) ->
-  gen_server:cast(?MODULE, {book, Order}).
-
-cancel_order(OrderId, Reason) ->
-  gen_server:cast(?MODULE, {cancel, OrderId, Reason}).
-
-delete_order(OrderId) ->
-  gen_server:cast(?MODULE, {delete, OrderId}).
-
-close_order(Txn) ->
-  gen_server:cast(?MODULE, {close, Txn}).
+-export([quote/1, quotes/0, execute/4]).
 
 quote(Symbol) ->
   gen_server:call(?MODULE, {quote, Symbol}).
@@ -48,12 +21,8 @@ quotes() ->
   Ret = market_utils:zip_proplist(Quotes, ?SYMBOLS),
   Ret.
 
-execute(Lock, Order, Contra, Price, Quantity) ->
-  gen_server:call(?MODULE, {execute, Lock, Order, Contra, Price, Quantity}).
-
-rollback(Txn) ->
-  gen_server:call(?MODULE, {rollback, Txn}).
-
+execute(Order, Contra, Price, Quantity) ->
+  gen_server:call(?MODULE, {execute, Order, Contra, Price, Quantity}).
 
 %% GEN_SERVER CALLBACKS
 
@@ -75,16 +44,6 @@ handle_info(_Msg, S) -> {noreply, S}.
 
 handle_call(_Msg, S) -> {reply, ok, S}.
 
-%% GET BOOKS
-handle_call({Side, Book, Symbol}, _, S) ->
-  Orders = do_script(orders, [Side, Book, Symbol], [], S),
-  lager:info("ORDERS ~p", [Orders]),
-  {reply, orders_reply(Orders), S};
-
-handle_call({order, Id}, _, S) ->
-  Order = do_script(order, [Id], [], S),
-  {reply, order_reply(Order), S};
-
 handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
   Reply = case eredis:q(Redis, ["HGET", Symbol, "price"]) of
     {ok, undefined} -> 1;
@@ -95,75 +54,30 @@ handle_call({quote, Symbol}, _, #state{redis=Redis}=S) ->
   end,
   {reply, Reply, S};
 
-handle_call({execute, L, O, C, P, Q}, _, S) ->
-  Keys = [
-    O#marketOrder.id,
-    C#marketOrder.id
-  ],
+handle_call({execute, O, C, P, Q}, _, S) ->
+  Keys = case O#marketOrder.type of
+    bid -> [ O#marketOrder.user, C#marketOrder.user ];
+    ask -> [ C#marketOrder.user, O#marketOrder.user ]
+  end,
   Args = [
     Q,
-    P,
-    L
+    P
   ],
   Ret = case do_script(execute, Keys, Args, S) of
     [<<"cancelled">>, Reason, BadOrder] ->
       {cancelled, val(Reason), val(BadOrder)};
-    [Tx, Quantity, Price] ->
-      {closed, #marketTxn {
-          id=val(Tx),
-          quantity=val(Quantity),
-          price=val(Price),
-          buy=O#marketOrder.id,
-          sell=C#marketOrder.id
-        }
-      };
+    [Quantity, Price] ->
+      {closed, val(Quantity), val(Price)};
     {error, Error} ->
       lager:error("ERROR EXECUTING ORDERS ~p~n~n~p~n~n", [O, C]),
       {cancelled, val(Error), none}
   end,
   {reply, Ret, S};
 
-handle_call({rollback, #marketTxn{id=Id, buy=Buy,sell=Sell} }, _, S) ->
-  Ret = do_script(rollback, [Id, Buy, Sell], [], S),
-  {reply, Ret, S}; 
-
 handle_call(Msg, _, S) ->
   lager:info("handle_call/3 got ~p", [Msg]),
   {reply, ok, S}.
 
-handle_cast({write, Order}, S) ->
-  do_write_order(Order, S),
-  {noreply, S};
-
-handle_cast({book, #marketOrder{id=Id, type=Side, symbol=Symbol, limit=Limit} = Order}, S) ->
-  Market = case Limit of
-    none -> "market";
-    _ -> "limit"
-  end,
-  case do_script(book, [Id, Symbol, Side, Market], [], S) of
-    {<<"error">>, <<"not found">>} ->
-      do_write_order(Order, S),
-      gen_server:cast(?MODULE, {book, Order});
-    _ -> ok
-  end,
-  {noreply, S};
-
-
-handle_cast({cancel, #marketOrder{id=Id}=Order, Reason}, S) ->
-  do_script(cancel, [Id], [Reason], S),
-  market_events:order_cancelled(Order),
-  {noreply, S};
-
-handle_cast({delete, Id}, S) ->
-  do_script(delete, [Id], [], S),
-  {noreply, S};
-
-handle_cast({close, Txn}, S) ->
-  TxId = Txn#marketTxn.id,
-  Ts = market_utils:timestamp(),
-  do_script(close, [TxId], [Ts], S),
-  {noreply, S};
-  
 handle_cast(_Msg, S) -> {noreply, S}.
 
 terminate(Reason, _) ->
@@ -171,22 +85,6 @@ terminate(Reason, _) ->
   ok.
 
 code_change(_, _, S) -> {ok, S}.
-
-do_write_order(Order, S) ->
-  #marketOrder {
-    id=Id,
-    user=User,
-    symbol=Symbol,
-    type=Type,
-    limit=Limit,
-    quantity=Quantity,
-    quantity_constraint=QConst,
-    time_in_force=Tif,
-    timestamp=Ts,
-    state=OState
-  } = Order,
-  do_script(write, [Id, User, Symbol],
-    [Type, Limit, Quantity, QConst, Tif, Ts, OState], S).
 
 load_scripts(Procs, Redis) ->
   Keys = proplists:get_keys(Procs),
@@ -222,39 +120,5 @@ do_script(ScriptName, Keys, Args, #state{hashes=Procs, redis=Redis}) ->
       lager:error("~p", [Reason]),
       {error, Reason}
   end.
-
-orders_reply(L) -> orders_reply(L, []).
-orders_reply([], R) -> R;
-orders_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts, State | T ], R) ->
-  Order = #marketOrder {
-    id=val(Id),
-    user=val(User),
-    symbol=list_to_atom(val(Symbol)),
-    type=val(Type),
-    limit=val(Limit),
-    quantity=val(Quantity),
-    quantity_constraint=val(QConst),
-    time_in_force=val(Tif),
-    timestamp=val(Ts),
-    state=val(State)
-  },
-  orders_reply(T, R ++ [Order]).
-
-order_reply([]) -> none;
-order_reply([undefined]) -> none;
-order_reply([undefined | _]) -> none;
-order_reply([ Id, User, Symbol, Type, Limit, Quantity, QConst, Tif, Ts, State ]) ->
-  #marketOrder {
-    id=val(Id),
-    user=val(User),
-    symbol=list_to_atom(val(Symbol)),
-    type=val(Type),
-    limit=val(Limit),
-    quantity=val(Quantity),
-    quantity_constraint=val(QConst),
-    time_in_force=val(Tif),
-    timestamp=val(Ts),
-    state=val(State)
-  }.
 
 val(A) -> market_utils:val(A).

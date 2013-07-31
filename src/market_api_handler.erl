@@ -28,17 +28,36 @@ get_method(Post) ->
   proplists:get_value(<<"method">>, Post).
   
 do_buy(Params, Req, State) ->
-  {queued, _OrderId} = market_broker:buy(order_params(Params)),
-  wait_on_response(Req, State).
+  Res = market_broker:buy(order_params(Params)),
+  order_response(Res, Req, State).
 
 do_sell(Params, Req, State) ->
-  {queued, _OrderId} = market_broker:sell(order_params(Params)),
-  wait_on_response(Req, State).
+  Res = market_broker:sell(order_params(Params)),
+  order_response(Res, Req, State).
 
 do_cancel(Params, Req, State) ->
   OrderId = val(proplists:get_value(<<"id">>, Params)),
   market_broker:cancel(OrderId),
   wait_on_response(Req, State).
+
+order_response({cancelled, R}, Req, State) ->
+  cowboy_req:chunk(list_to_binary([<<"{\"result\":\"cancelled\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
+  {ok, Req, State};
+order_response({error, {_, R}}, Req, State) ->
+  cowboy_req:chunk(list_to_binary([<<"{\"result\":\"error\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
+  {ok, Req, State};
+order_response({closed, _O, Txns}, Req, State) ->
+  lists:foreach(fun({_, {P, Q}}) ->
+    Msg = list_to_binary(["{\"result\":\"closed\",\"price\":", integer_to_list(P), ",\"quantity\":", integer_to_list(Q), "}\n\n"]),
+    cowboy_req:chunk(Msg, Req)
+  end, Txns),
+  {ok, Req, State};
+order_response(#marketOrder{id=Id}, Req, State) ->
+  cowboy_req:chunk(list_to_binary([<<"{\"result\":\"booked\",\"id\":\"">>, Id, <<"\"}\n\n">>]), Req),
+  {ok, Req, State};
+order_response(Response, Req, State) ->
+  lager:info("UNKNOWN RESPONSE ~p", [Response]),
+  {ok, Req, State}.
 
 order_params(Post) ->
   User = val(proplists:get_value(<<"user">>, Post)),
@@ -51,21 +70,8 @@ order_params(Post) ->
 
 wait_on_response(Req, State) ->
   receive
-    {cancelled, _O, R} ->
-      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"cancelled\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
-      {ok, Req, State};
-    {error, _O, {_, R}} ->
-      cowboy_req:chunk(list_to_binary([<<"{\"result\":\"error\",\"reason\":\"">>, R, <<"\"}\n\n">>]), Req),
-      {ok, Req, State};
     {booked, #marketOrder{id=Id}} ->
       cowboy_req:chunk(list_to_binary([<<"{\"result\":\"booked\",\"id\":\"">>, Id, <<"\"}\n\n">>]), Req),
-      {ok, Req, State};
-    {closed, _O, Txns} ->
-      lists:foreach(fun({_, X}) ->
-        #marketTxn{price=P, quantity=Q} = X,
-        Msg = list_to_binary(["{\"result\":\"closed\",\"price\":", integer_to_list(P), ",\"quantity\":", integer_to_list(Q), "}\n\n"]),
-        cowboy_req:chunk(Msg, Req)
-      end, Txns),
       {ok, Req, State};
     shutdown ->
       {ok, Req, State};
